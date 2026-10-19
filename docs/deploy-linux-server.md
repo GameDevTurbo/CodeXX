@@ -2,9 +2,14 @@
 
 适用于 Ubuntu 20.04+、Debian 11+、CentOS Stream 9+。
 
-## 方案一：一键脚本
+## 方案一：一键部署脚本（推荐）
 
 ```bash
+# 本地脚本（完整版，自动生成密钥和配置）
+bash scripts/deploy.sh
+# 可选参数: --dir ~/myproxy --port 8317 --expose
+
+# 或使用社区远程脚本
 curl -fsSL https://raw.githubusercontent.com/brokechubb/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer | bash
 ```
 

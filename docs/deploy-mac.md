@@ -1,6 +1,18 @@
 # macOS 部署指南
 
-## 前置条件
+## 一键部署（推荐）
+
+```bash
+bash scripts/deploy.sh
+```
+
+脚本会自动检查 Docker、生成密钥、创建配置、启动服务。如需手动部署，继续阅读下方步骤。
+
+---
+
+## 手动部署
+
+### 前置条件
 
 - [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop/)（方案一）
 - 或 Go >= 1.22：`brew install go`（方案二）
