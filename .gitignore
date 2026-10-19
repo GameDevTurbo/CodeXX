@@ -1,0 +1,17 @@
+# Sensitive files - DO NOT commit
+config.yaml
+auths/
+
+# Logs
+logs/
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
