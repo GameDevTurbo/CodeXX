@@ -1,4 +1,4 @@
-# Sensitive files - DO NOT commit
+﻿# Sensitive files - DO NOT commit
 config.yaml
 auths/
 
@@ -9,9 +9,12 @@ logs/
 .idea/
 .vscode/
 
-# Claude Code
-.claude/
-
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code (only exclude local overrides, not the whole dir)
+.claude/settings.local.json
+.claude/worktrees/
+.claude/todos/
+.claude/memory/
