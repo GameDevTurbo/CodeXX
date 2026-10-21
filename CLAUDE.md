@@ -13,12 +13,15 @@
 
 | 文件 | 用途 | 使用对象 |
 |------|------|------|
-| `launcher.py` | 部署端 GUI: 4步向导 + 连接信息 | 运行服务的机器 |
-| `client.py` | 使用端 GUI: 导入配置 + Tailscale管理 + 工具检测 | 其他设备 |
-| `start.bat` | Windows 双击入口 | 所有 Windows |
-| `_bootstrap.ps1` | 自动找 Python，支持离线包 | 由 start.bat 调用 |
-| `start.sh` | macOS/Linux 入口 | Mac/Linux |
-| `prepare_offline.bat` | 预下载依赖包 | 有网时提前准备 |
+| `launcher.py` | 部署端 GUI: 4步向导 + 连接信息导出 | 运行服务的机器 |
+| `client.py` | 使用端 GUI ([CodeXX-Client](https://github.com/GameDevTurbo/CodeXX-Client)) | 其他设备 |
+| `Server.bat` | Windows 双击启动 Server | 所有 Windows |
+| `Client.bat` | Windows 双击启动 Client | 所有 Windows |
+| `Server.command` | macOS 双击启动 Server | macOS |
+| `Client.command` | macOS 双击启动 Client | macOS |
+| `_bootstrap.ps1` | 自动找 Python，支持离线包 | 由 bat 调用 |
+| `start.sh` | macOS/Linux 命令行启动 | Mac/Linux |
+| `prepare_offline.bat/sh` | 预下载离线依赖包 | 有网时提前准备 |
 | `config.yaml` | 主配置: API Key、路由、管理密码 | 服务端 |
 | `docker-compose.yml` | Docker 编排 | 服务端 |
 

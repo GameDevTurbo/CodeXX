@@ -1,4 +1,4 @@
-﻿# CLIProxyAPI
+﻿# CLIProxyAPI Server
 
 \u5c06 ChatGPT Plus / Claude Pro \u7b49 AI \u8ba2\u9605\u8f6c\u4e3a\u6807\u51c6 OpenAI API\uff0c\u4f9b\u591a\u8bbe\u5907\u5171\u4eab\u3002
 

@@ -1,4 +1,4 @@
-name: Build Executables
+name: Build Server
 
 on:
   push:
@@ -13,13 +13,10 @@ jobs:
         include:
           - os: windows-latest
             name: Windows
-            ext: .exe
           - os: macos-latest
             name: macOS
-            ext: ''
           - os: ubuntu-latest
             name: Linux
-            ext: ''
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.name }})
@@ -38,62 +35,49 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y python3-tk
 
-      - name: Build executables
-        run: |
-          pyinstaller --onefile --windowed --name CLIProxyAPI-Server launcher.py
-          pyinstaller --onefile --windowed --name CLIProxyAPI-Client client.py
+      - name: Build Server executable
+        run: pyinstaller --onefile --windowed --name CLIProxyAPI-Server launcher.py
 
-      - name: Package release (Windows)
+      - name: Package (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $pkg = "CLIProxyAPI-Windows"
-          mkdir $pkg
-          cp dist/CLIProxyAPI-Server.exe $pkg/
-          cp dist/CLIProxyAPI-Client.exe $pkg/
-          cp Server.bat, Client.bat, _bootstrap.ps1 $pkg/
-          cp docker-compose.yml, prepare_offline.bat $pkg/
-          cp README.md $pkg/
-          mkdir $pkg/docs
+          $pkg = "CLIProxyAPI-Server-Windows"
+          mkdir $pkg; mkdir $pkg/docs
+          cp dist/CLIProxyAPI-Server.exe, Server.bat, Client.bat, _bootstrap.ps1 $pkg/
+          cp Server.command, Client.command $pkg/
+          cp docker-compose.yml, prepare_offline.bat, README.md $pkg/
           cp docs/windows.md $pkg/docs/
           mkdir $pkg/auths, $pkg/logs, $pkg/plugins
-          Compress-Archive -Path $pkg -DestinationPath CLIProxyAPI-Windows.zip
+          Compress-Archive -Path $pkg -DestinationPath CLIProxyAPI-Server-Windows.zip
 
-      - name: Package release (macOS)
+      - name: Package (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          pkg="CLIProxyAPI-macOS"
+          pkg="CLIProxyAPI-Server-macOS"
           mkdir -p $pkg/docs $pkg/auths $pkg/logs $pkg/plugins
-          cp dist/CLIProxyAPI-Server $pkg/
-          cp dist/CLIProxyAPI-Client $pkg/
-          chmod +x $pkg/CLIProxyAPI-Server $pkg/CLIProxyAPI-Client
-          cp Server.command Client.command start.sh $pkg/
-          chmod +x $pkg/Server.command $pkg/Client.command $pkg/start.sh
+          cp dist/CLIProxyAPI-Server $pkg/; chmod +x $pkg/CLIProxyAPI-Server
+          cp Server.command Client.command start.sh $pkg/; chmod +x $pkg/Server.command $pkg/Client.command $pkg/start.sh
           cp docker-compose.yml prepare_offline.sh README.md $pkg/
           cp docs/macos.md $pkg/docs/
-          zip -r CLIProxyAPI-macOS.zip $pkg
+          zip -r CLIProxyAPI-Server-macOS.zip $pkg
 
-      - name: Package release (Linux)
+      - name: Package (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          pkg="CLIProxyAPI-Linux"
+          pkg="CLIProxyAPI-Server-Linux"
           mkdir -p $pkg/docs $pkg/scripts $pkg/auths $pkg/logs $pkg/plugins
-          cp dist/CLIProxyAPI-Server $pkg/
-          cp dist/CLIProxyAPI-Client $pkg/
-          chmod +x $pkg/CLIProxyAPI-Server $pkg/CLIProxyAPI-Client
-          cp start.sh prepare_offline.sh $pkg/
-          chmod +x $pkg/start.sh $pkg/prepare_offline.sh
-          cp scripts/deploy.sh $pkg/scripts/
-          chmod +x $pkg/scripts/deploy.sh
+          cp dist/CLIProxyAPI-Server $pkg/; chmod +x $pkg/CLIProxyAPI-Server
+          cp start.sh prepare_offline.sh $pkg/; chmod +x $pkg/start.sh $pkg/prepare_offline.sh
+          cp scripts/deploy.sh $pkg/scripts/; chmod +x $pkg/scripts/deploy.sh
           cp docker-compose.yml README.md $pkg/
           cp docs/linux.md $pkg/docs/
-          zip -r CLIProxyAPI-Linux.zip $pkg
+          zip -r CLIProxyAPI-Server-Linux.zip $pkg
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.name }}
-          path: CLIProxyAPI-${{ matrix.name }}.zip
+          name: server-${{ matrix.name }}
+          path: CLIProxyAPI-Server-${{ matrix.name }}.zip
 
   release:
     needs: build
@@ -112,22 +96,26 @@ jobs:
         with:
           name: ${{ github.ref_name }}
           body: |
-            ## CLIProxyAPI ${{ github.ref_name }}
+            ## CLIProxyAPI Server ${{ github.ref_name }}
 
-            下载对应平台的 zip 包，解压后双击即可运行，**无需安装 Python**。
+            下载对应平台 zip，解压后双击即可运行，**无需安装 Python**。
 
-            | 平台 | 下载 | Server（部署） | Client（使用） |
-            |------|------|---------|---------|
-            | Windows | `CLIProxyAPI-Windows.zip` | 双击 `Server.bat` | 双击 `Client.bat` |
-            | macOS | `CLIProxyAPI-macOS.zip` | 双击 `Server.command` | 双击 `Client.command` |
-            | Linux | `CLIProxyAPI-Linux.zip` | `./CLIProxyAPI-Server` | `./CLIProxyAPI-Client` |
+            | 平台 | 下载 | 启动方式 |
+            |------|------|---------|
+            | Windows | `CLIProxyAPI-Server-Windows.zip` | 双击 `Server.bat` 或 `.exe` |
+            | macOS | `CLIProxyAPI-Server-macOS.zip` | 双击 `Server.command` |
+            | Linux | `CLIProxyAPI-Server-Linux.zip` | `./CLIProxyAPI-Server` 或 `bash scripts/deploy.sh` |
+
+            ### 客户端工具
+
+            使用端（其他设备连接此服务）请使用：
+            **[CLIProxyAPI-Client](https://github.com/GameDevTurbo/CodeXX-Client/releases)**
 
             ### 离线部署
 
-            1. 解压后在**有网机器**运行 `prepare_offline.bat`（Windows）或 `prepare_offline.sh`（Mac/Linux）
-            2. 将整个文件夹复制到**目标机器**
-            3. 加载 Docker 镜像：`docker load -i offline_deps/cli-proxy-api-image.tar`
-            4. 双击启动
-
-            > Docker Desktop 需单独安装：https://www.docker.com/products/docker-desktop/
+            在有网机器运行 `prepare_offline.bat`（Windows）或 `prepare_offline.sh`（Mac/Linux），
+            然后将整个文件夹复制到目标机器，运行：
+            ```
+            docker load -i offline_deps/cli-proxy-api-image.tar
+            ```
           files: dist/*.zip
