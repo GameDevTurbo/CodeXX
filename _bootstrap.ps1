@@ -42,6 +42,13 @@ function Install-PythonViaWinget {
 }
 
 function Install-CustomTkinter($pyExe) {
+    $wheelsDir = Join-Path $Dir "offline_deps\wheels"
+    if (Test-Path $wheelsDir) {
+        Write-Host "Installing customtkinter from offline cache..."
+        & $pyExe -m pip install customtkinter --find-links $wheelsDir --no-index -q 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { return }
+        Write-Host "Offline install failed, trying network..."
+    }
     & $pyExe -m pip install customtkinter -q 2>$null | Out-Null
 }
 
@@ -64,6 +71,16 @@ function Get-PythonW($pyExe) {
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 $py = Find-Python
+
+if (-not $py) {
+    # Check offline_deps first
+    $offlinePy = Join-Path $Dir "offline_deps\python-3.12-installer.exe"
+    if (Test-Path $offlinePy) {
+        Write-Host "Installing Python from offline package..."
+        Start-Process $offlinePy -ArgumentList "/quiet","InstallAllUsers=0","PrependPath=1" -Wait
+        $py = Find-Python
+    }
+}
 
 if (-not $py) {
     Install-PythonViaWinget | Out-Null

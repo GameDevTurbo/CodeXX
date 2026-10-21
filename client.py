@@ -4,9 +4,11 @@
 import os
 import sys
 import json
+import re
 import platform
 import subprocess
 import shutil
+import webbrowser
 from pathlib import Path
 
 try:
@@ -27,6 +29,7 @@ C_INPUT = "#24243a"
 C_BLUE  = "#388bfd"
 C_GREEN = "#3fb950"
 C_RED   = "#da3633"
+C_ORANGE= "#d28a28"
 C_DIM   = "#646478"
 C_TEXT  = "#dcdce6"
 
@@ -115,10 +118,11 @@ class ClientApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("CLIProxyAPI Client Setup")
-        self.geometry("560,640")
+        self.geometry("560x780")
         self.resizable(False, False)
         self.configure(fg_color=C_BG)
         self._build_ui()
+        self.after(200, self._check_tools)
 
     def _build_ui(self):
         # Header
@@ -208,6 +212,51 @@ class ClientApp(ctk.CTk):
 
         ctk.CTkFrame(cfg, fg_color="transparent", height=8).pack()
 
+        # Tool checker section
+        chk = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
+        chk.pack(fill="x", padx=20, pady=(0, 8))
+        ctk.CTkLabel(chk, text="Required Tools",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=C_TEXT).pack(anchor="w", padx=14, pady=(12,6))
+
+        self.tool_rows: dict = {}
+        TOOLS = [
+            ("Claude Code", "claude",     "https://docs.anthropic.com/en/docs/claude-code",
+             "npm install -g @anthropic-ai/claude-code"),
+            ("Codex CLI",   "codex",      "https://github.com/openai/codex",
+             "npm install -g @openai/codex"),
+            ("cc-switch",   "cc-switch",  "https://github.com/farion1231/cc-switch/releases",
+             None),
+            ("Node / npm",  "node",       "https://nodejs.org/en/download/",
+             None),
+        ]
+        for name, cmd, url, npm_cmd in TOOLS:
+            row = ctk.CTkFrame(chk, fg_color="transparent")
+            row.pack(fill="x", padx=14, pady=3)
+            dot  = ctk.CTkLabel(row, text="●", font=ctk.CTkFont(size=12),
+                                 text_color=C_DIM, width=16)
+            dot.pack(side="left")
+            lbl  = ctk.CTkLabel(row, text=name, font=ctk.CTkFont(size=10),
+                                 text_color=C_TEXT, width=100, anchor="w")
+            lbl.pack(side="left", padx=(4,0))
+            stat = ctk.CTkLabel(row, text="—", font=ctk.CTkFont(size=9),
+                                 text_color=C_DIM, width=120, anchor="w")
+            stat.pack(side="left", padx=(6,0))
+            btn  = ctk.CTkButton(row, text="Install", width=80, height=24,
+                                  font=ctk.CTkFont(size=8),
+                                  fg_color=C_ORANGE, hover_color="#a06020",
+                                  command=lambda u=url, n=npm_cmd: self._install_tool(u, n))
+            btn.pack(side="right")
+            btn.pack_forget()
+            self.tool_rows[name] = {"dot": dot, "stat": stat, "btn": btn,
+                                     "cmd": cmd, "url": url, "npm": npm_cmd}
+
+        ctk.CTkButton(chk, text="↺  Recheck", width=90, height=26,
+                      font=ctk.CTkFont(size=9),
+                      fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
+                      border_width=1, border_color=C_DIM,
+                      command=self._check_tools).pack(anchor="w", padx=14, pady=(4,12))
+
         # Log
         ctk.CTkLabel(self, text="Log", font=ctk.CTkFont(size=10),
                      text_color=C_DIM).pack(anchor="w", padx=20)
@@ -216,6 +265,41 @@ class ClientApp(ctk.CTk):
             fg_color="#0a0a0e", text_color=C_TEXT, corner_radius=6, wrap="word")
         self.log_box.pack(fill="both", expand=True, padx=20, pady=(4, 16))
         self.log_box.configure(state="disabled")
+
+    def _check_tools(self):
+        for name, info in self.tool_rows.items():
+            cmd = info["cmd"]
+            found = shutil.which(cmd)
+            if found:
+                try:
+                    r = subprocess.run([cmd, "--version"], capture_output=True,
+                                       text=True, timeout=5)
+                    ver = (r.stdout or r.stderr).strip().splitlines()[0][:30]
+                except Exception:
+                    ver = "installed"
+                info["dot"].configure(text_color=C_GREEN)
+                info["stat"].configure(text=ver, text_color=C_GREEN)
+                info["btn"].pack_forget()
+            else:
+                info["dot"].configure(text_color=C_RED)
+                info["stat"].configure(text="Not found", text_color=C_RED)
+                info["btn"].pack(side="right")
+
+    def _install_tool(self, url: str, npm_cmd: str | None):
+        if npm_cmd and shutil.which("npm"):
+            self.log(f"Running: {npm_cmd}", "dim")
+            import threading
+            def run():
+                r = subprocess.run(npm_cmd.split(), capture_output=True,
+                                   text=True, encoding="utf-8", errors="replace")
+                self.after(0, lambda: (
+                    self.log(r.stdout.strip() or r.stderr.strip(), "ok" if r.returncode == 0 else "error"),
+                    self._check_tools()
+                ))
+            threading.Thread(target=run, daemon=True).start()
+        else:
+            webbrowser.open(url)
+            self.log(f"Opened: {url}", "dim")
 
     def log(self, msg: str, color: str = C_TEXT):
         self.log_box.configure(state="normal")

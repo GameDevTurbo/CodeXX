@@ -2,6 +2,7 @@
 config.yaml
 auths/
 .credentials.json
+offline_deps/
 
 # Logs
 logs/
