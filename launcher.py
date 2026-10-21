@@ -108,29 +108,50 @@ def get_tailscale_ip() -> str:
     except Exception:
         return ""
 
+def find_tailscale() -> str:
+    """Return path to tailscale executable, or empty string if not found."""
+    # Check PATH first
+    found = shutil.which("tailscale")
+    if found:
+        return found
+    # Windows common install paths
+    for p in [
+        r"C:\Program Files\Tailscale\tailscale.exe",
+        r"C:\Program Files (x86)\Tailscale\tailscale.exe",
+    ]:
+        if Path(p).exists():
+            return p
+    # macOS
+    for p in ["/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+              "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale"]:
+        if Path(p).exists():
+            return p
+    return ""
+
 def tailscale_status() -> dict:
     """Returns dict: installed, connected, ip, state."""
-    if not shutil.which("tailscale"):
+    exe = find_tailscale()
+    if not exe:
         return {"installed": False, "connected": False, "ip": "", "state": "not_installed"}
     try:
-        r = subprocess.run(["tailscale", "status", "--json"],
-                           capture_output=True, text=True, timeout=5, **ENC)
+        r = subprocess.run([exe, "status", "--json"],
+                           capture_output=True, text=True, timeout=8, **ENC)
         if r.returncode != 0:
             return {"installed": True, "connected": False, "ip": "", "state": "stopped"}
         data = json.loads(r.stdout)
         backend = data.get("BackendState", "")
         if backend == "Running":
             addrs = data.get("Self", {}).get("TailscaleIPs", [])
-            ip = next((a for a in addrs if "." in a), "")  # prefer IPv4
+            ip = next((a for a in addrs if "." in a), "")
             return {"installed": True, "connected": True, "ip": ip, "state": "running"}
-        elif backend == "NeedsLogin":
+        elif backend in ("NeedsLogin", "NoState"):
             return {"installed": True, "connected": False, "ip": "", "state": "needs_login"}
         else:
-            return {"installed": True, "connected": False, "ip": "", "state": backend.lower()}
+            return {"installed": True, "connected": False, "ip": "", "state": backend.lower() or "stopped"}
     except Exception:
         ip = get_tailscale_ip()
         return {"installed": True, "connected": bool(ip), "ip": ip,
-                "state": "running" if ip else "unknown"}
+                "state": "running" if ip else "stopped"}
 
 def get_local_ip() -> str:
     try:
@@ -501,22 +522,35 @@ class App(ctk.CTk):
 
     def _tailscale_download(self):
         open_browser("https://tailscale.com/download")
-        self.log("Opening tailscale.com/download ...", "warn")
+        self.log("Opening tailscale.com/download in browser...", "warn")
 
     def _tailscale_login(self):
-        self.log("Opening Tailscale login (browser will open)...", "warn")
-        try:
-            subprocess.Popen(["tailscale", "up"])
-        except Exception as e:
-            self.log(f"Error: {e}", "error")
+        exe = find_tailscale()
+        if not exe:
+            self.log("Tailscale not found. Please install it first.", "error")
+            open_browser("https://tailscale.com/download")
+            return
+        self.log("Running 'tailscale up' — browser will open for login...", "warn")
+        if OS == "Windows":
+            subprocess.Popen(["powershell", "-Command",
+                              f"& '{exe}' up; Read-Host 'Press Enter to close'"],
+                             creationflags=subprocess.CREATE_NEW_CONSOLE)
+        else:
+            subprocess.Popen([exe, "up"])
+        self.after(5000, self._refresh)
 
     def _tailscale_start(self):
+        exe = find_tailscale()
+        if not exe:
+            self.log("Tailscale not found.", "error"); return
         self.log("Starting Tailscale...", "warn")
-        try:
-            subprocess.Popen(["tailscale", "up"])
-            self.after(3000, self._refresh)
-        except Exception as e:
-            self.log(f"Error: {e}", "error")
+        if OS == "Windows":
+            subprocess.Popen(["powershell", "-Command",
+                              f"& '{exe}' up; Read-Host 'Press Enter to close'"],
+                             creationflags=subprocess.CREATE_NEW_CONSOLE)
+        else:
+            subprocess.Popen([exe, "up"])
+        self.after(5000, self._refresh)
 
     def _start_docker(self):
         self.log("Starting Docker Desktop...", "warn")
