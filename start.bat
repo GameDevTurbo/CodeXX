@@ -1,20 +1,23 @@
 ﻿@echo off
 setlocal
 
-rem Check Python
-where python >/dev/null 2>/dev/null && goto :has_python
+rem Find pythonw (no console window) or python
+where pythonw >/dev/null 2>/dev/null && set PYEXE=pythonw && goto :run
+where python  >/dev/null 2>/dev/null && set PYEXE=python  && goto :install
 
-rem Try installing Python via winget
-where winget >/dev/null 2>/dev/null && (
-    echo Installing Python...
-    winget install Python.Python.3.12 -e --silent --accept-source-agreements --accept-package-agreements
-    where python >/dev/null 2>/dev/null && goto :has_python
-)
+rem No Python - try winget
+where winget >/dev/null 2>/dev/null || goto :nopython
+echo Installing Python via winget...
+winget install Python.Python.3.12 -e --silent --accept-source-agreements --accept-package-agreements
+where pythonw >/dev/null 2>/dev/null && set PYEXE=pythonw && goto :install
+where python  >/dev/null 2>/dev/null && set PYEXE=python  && goto :install
 
-rem Fallback: PowerShell launcher
+:nopython
 powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0launcher.ps1"
 goto :eof
 
-:has_python
+:install
 python -m pip install customtkinter -q 2>nul
-python "%~dp0launcher.py"
+
+:run
+start "" %PYEXE% "%~dp0launcher.py"

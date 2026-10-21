@@ -681,6 +681,17 @@ class App(ctk.CTk):
 
 
 if __name__ == "__main__":
-    app = App()
-    app.protocol("WM_DELETE_WINDOW", app.on_close)
-    app.mainloop()
+    try:
+        app = App()
+        app.protocol("WM_DELETE_WINDOW", app.on_close)
+        app.mainloop()
+    except Exception as e:
+        import traceback
+        msg = traceback.format_exc()
+        try:
+            import tkinter.messagebox as mb
+            import tkinter as tk
+            root = tk.Tk(); root.withdraw()
+            mb.showerror("CLIProxyAPI Launcher Error", msg)
+        except Exception:
+            print(msg, file=sys.stderr)
