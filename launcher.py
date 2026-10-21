@@ -103,6 +103,30 @@ def get_tailscale_ip() -> str:
     except Exception:
         return ""
 
+def tailscale_status() -> dict:
+    """Returns dict: installed, connected, ip, state."""
+    if not shutil.which("tailscale"):
+        return {"installed": False, "connected": False, "ip": "", "state": "not_installed"}
+    try:
+        r = subprocess.run(["tailscale", "status", "--json"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode != 0:
+            return {"installed": True, "connected": False, "ip": "", "state": "stopped"}
+        data = json.loads(r.stdout)
+        backend = data.get("BackendState", "")
+        if backend == "Running":
+            addrs = data.get("Self", {}).get("TailscaleIPs", [])
+            ip = next((a for a in addrs if "." in a), "")  # prefer IPv4
+            return {"installed": True, "connected": True, "ip": ip, "state": "running"}
+        elif backend == "NeedsLogin":
+            return {"installed": True, "connected": False, "ip": "", "state": "needs_login"}
+        else:
+            return {"installed": True, "connected": False, "ip": "", "state": backend.lower()}
+    except Exception:
+        ip = get_tailscale_ip()
+        return {"installed": True, "connected": bool(ip), "ip": ip,
+                "state": "running" if ip else "unknown"}
+
 def get_local_ip() -> str:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -141,7 +165,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("CLIProxyAPI Manager")
-        self.geometry("580x720")
+        self.geometry("580x780")
         self.resizable(False, False)
         self.configure(fg_color=C_BG)
 
@@ -168,6 +192,7 @@ class App(ctk.CTk):
         self.s1 = self._step_row(self.steps_frame, "1", "Docker Desktop")
         self.s2 = self._step_row(self.steps_frame, "2", "Configuration")
         self.s3 = self._step_row(self.steps_frame, "3", "Service")
+        self.s4 = self._step_row(self.steps_frame, "★", "Tailscale (Remote)")
 
         # Wizard panel
         self.wiz_frame = ctk.CTkFrame(self, fg_color=C_WIZARD, corner_radius=8)
@@ -339,6 +364,21 @@ class App(ctk.CTk):
                            "Deploy", C_BLUE, self._deploy)
             self.conn_frame.pack_forget()
 
+        # Step 4: Tailscale (optional)
+        ts = tailscale_status()
+        if ts["state"] == "not_installed":
+            self._set_step(self.s4, C_DIM, "Not installed",
+                           "Download", C_DIM, self._tailscale_download)
+        elif ts["state"] == "needs_login":
+            self._set_step(self.s4, C_ORANGE, "Not logged in",
+                           "Login", C_ORANGE, self._tailscale_login)
+        elif ts["connected"]:
+            self._set_step(self.s4, C_GREEN,
+                           f"Connected · {ts['ip']}", None, None)
+        else:
+            self._set_step(self.s4, C_ORANGE, f"Stopped ({ts['state']})",
+                           "Start", C_ORANGE, self._tailscale_start)
+
     def _show_connect_info(self):
         """Build/refresh the connection info card when service is running."""
         ts_ip    = get_tailscale_ip()
@@ -453,6 +493,25 @@ class App(ctk.CTk):
         self._auto = self.after(8000, self._tick)
 
     # ── Step actions ───────────────────────────────────────────────────────────
+
+    def _tailscale_download(self):
+        open_browser("https://tailscale.com/download")
+        self.log("Opening tailscale.com/download ...", "warn")
+
+    def _tailscale_login(self):
+        self.log("Opening Tailscale login (browser will open)...", "warn")
+        try:
+            subprocess.Popen(["tailscale", "up"])
+        except Exception as e:
+            self.log(f"Error: {e}", "error")
+
+    def _tailscale_start(self):
+        self.log("Starting Tailscale...", "warn")
+        try:
+            subprocess.Popen(["tailscale", "up"])
+            self.after(3000, self._refresh)
+        except Exception as e:
+            self.log(f"Error: {e}", "error")
 
     def _start_docker(self):
         self.log("Starting Docker Desktop...", "warn")
