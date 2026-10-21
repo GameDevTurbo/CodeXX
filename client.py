@@ -286,22 +286,31 @@ class ClientApp(ctk.CTk):
         # Tool checker section
         chk = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
         chk.pack(fill="x", padx=20, pady=(0, 8))
-        ctk.CTkLabel(chk, text="Required Tools",
+
+        chk_hdr = ctk.CTkFrame(chk, fg_color="transparent")
+        chk_hdr.pack(fill="x", padx=14, pady=(12, 6))
+        ctk.CTkLabel(chk_hdr, text="Required Tools",
                      font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color=C_TEXT).pack(anchor="w", padx=14, pady=(12,6))
+                     text_color=C_TEXT).pack(side="left")
+        ctk.CTkButton(chk_hdr, text="⚡ Setup All", width=110, height=26,
+                      font=ctk.CTkFont(size=9, weight="bold"),
+                      fg_color=C_BLUE, hover_color="#2a6fd4",
+                      command=self._setup_all).pack(side="right")
 
         self.tool_rows: dict = {}
         TOOLS = [
-            ("Claude Code", "claude",     "https://docs.anthropic.com/en/docs/claude-code",
-             "npm install -g @anthropic-ai/claude-code"),
-            ("Codex CLI",   "codex",      "https://github.com/openai/codex",
-             "npm install -g @openai/codex"),
-            ("cc-switch",   "cc-switch",  "https://github.com/farion1231/cc-switch/releases",
-             None),
-            ("Node / npm",  "node",       "https://nodejs.org/en/download/",
-             None),
+            ("Tailscale",   "tailscale", "https://tailscale.com/download",
+             None,   "tailscale"),
+            ("Node / npm",  "node",      "https://nodejs.org/en/download/",
+             None,   "OpenJS.NodeJS.LTS"),
+            ("Claude Code", "claude",    "https://docs.anthropic.com/en/docs/claude-code",
+             "npm install -g @anthropic-ai/claude-code", None),
+            ("Codex CLI",   "codex",     "https://github.com/openai/codex",
+             "npm install -g @openai/codex", None),
+            ("cc-switch",   "cc-switch", "https://github.com/farion1231/cc-switch/releases",
+             None,   None),
         ]
-        for name, cmd, url, npm_cmd in TOOLS:
+        for name, cmd, url, npm_cmd, winget_id in TOOLS:
             row = ctk.CTkFrame(chk, fg_color="transparent")
             row.pack(fill="x", padx=14, pady=3)
             dot  = ctk.CTkLabel(row, text="●", font=ctk.CTkFont(size=12),
@@ -311,22 +320,28 @@ class ClientApp(ctk.CTk):
                                  text_color=C_TEXT, width=100, anchor="w")
             lbl.pack(side="left", padx=(4,0))
             stat = ctk.CTkLabel(row, text="—", font=ctk.CTkFont(size=9),
-                                 text_color=C_DIM, width=120, anchor="w")
+                                 text_color=C_DIM, width=150, anchor="w")
             stat.pack(side="left", padx=(6,0))
             btn  = ctk.CTkButton(row, text="Install", width=80, height=24,
                                   font=ctk.CTkFont(size=8),
                                   fg_color=C_ORANGE, hover_color="#a06020",
-                                  command=lambda u=url, n=npm_cmd: self._install_tool(u, n))
+                                  command=lambda u=url, n=npm_cmd, w=winget_id:
+                                      self._install_tool(u, n, w))
             btn.pack(side="right")
             btn.pack_forget()
             self.tool_rows[name] = {"dot": dot, "stat": stat, "btn": btn,
-                                     "cmd": cmd, "url": url, "npm": npm_cmd}
+                                     "cmd": cmd, "url": url,
+                                     "npm": npm_cmd, "winget": winget_id}
 
-        ctk.CTkButton(chk, text="↺  Recheck", width=90, height=26,
+        btn_row = ctk.CTkFrame(chk, fg_color="transparent")
+        btn_row.pack(fill="x", padx=14, pady=(4, 12))
+        ctk.CTkButton(btn_row, text="↺  Recheck", width=90, height=26,
                       font=ctk.CTkFont(size=9),
                       fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
                       border_width=1, border_color=C_DIM,
-                      command=self._check_tools).pack(anchor="w", padx=14, pady=(4,12))
+                      command=lambda: threading.Thread(
+                          target=self._check_tools_bg, daemon=True).start()
+                      ).pack(side="left")
 
         # Log
         ctk.CTkLabel(self, text="Log", font=ctk.CTkFont(size=10),
@@ -447,38 +462,87 @@ class ClientApp(ctk.CTk):
     # ── Tool checker ───────────────────────────────────────────────────────────
 
     def _check_tools(self):
+        threading.Thread(target=self._check_tools_bg, daemon=True).start()
+
+    def _check_tools_bg(self):
         for name, info in self.tool_rows.items():
-            cmd = info["cmd"]
-            found = shutil.which(cmd)
+            found = shutil.which(info["cmd"])
             if found:
                 try:
-                    r = subprocess.run([cmd, "--version"], capture_output=True,
+                    r = subprocess.run([info["cmd"], "--version"], capture_output=True,
                                        timeout=5, **ENC, **_NO_WIN)
                     ver = (r.stdout or r.stderr).strip().splitlines()[0][:30]
                 except Exception:
                     ver = "installed"
-                info["dot"].configure(text_color=C_GREEN)
-                info["stat"].configure(text=ver, text_color=C_GREEN)
-                info["btn"].pack_forget()
-            else:
-                info["dot"].configure(text_color=C_RED)
-                info["stat"].configure(text="Not found", text_color=C_RED)
-                info["btn"].pack(side="right")
-
-    def _install_tool(self, url: str, npm_cmd: str | None):
-        if npm_cmd and shutil.which("npm"):
-            self.log(f"Running: {npm_cmd}", "dim")
-            def run():
-                r = subprocess.run(npm_cmd.split(), capture_output=True,
-                                   text=True, encoding="utf-8", errors="replace")
-                self.after(0, lambda: (
-                    self.log(r.stdout.strip() or r.stderr.strip(), "ok" if r.returncode == 0 else "error"),
-                    self._check_tools()
+                self.after(0, lambda n=name, v=ver: (
+                    self.tool_rows[n]["dot"].configure(text_color=C_GREEN),
+                    self.tool_rows[n]["stat"].configure(text=v, text_color=C_GREEN),
+                    self.tool_rows[n]["btn"].pack_forget()
                 ))
-            threading.Thread(target=run, daemon=True).start()
-        else:
-            webbrowser.open(url)
-            self.log(f"Opened: {url}", "dim")
+            else:
+                self.after(0, lambda n=name: (
+                    self.tool_rows[n]["dot"].configure(text_color=C_RED),
+                    self.tool_rows[n]["stat"].configure(text="Not found", text_color=C_RED),
+                    self.tool_rows[n]["btn"].pack(side="right")
+                ))
+
+    def _install_tool(self, url: str, npm_cmd: str | None, winget_id: str | None = None):
+        def run():
+            if npm_cmd and shutil.which("npm"):
+                self.after(0, lambda: self.log(f"Installing: {npm_cmd}", "dim"))
+                r = subprocess.run(npm_cmd.split(), capture_output=True, **ENC, **_NO_WIN)
+                msg = (r.stdout or r.stderr or "done").strip()[:120]
+                kind = "ok" if r.returncode == 0 else "error"
+                self.after(0, lambda m=msg, k=kind: self.log(m, k))
+                if r.returncode == 0:
+                    self.after(500, self._check_tools)
+                    return
+            if winget_id and OS == "Windows" and shutil.which("winget"):
+                self.after(0, lambda: self.log(f"Installing via winget: {winget_id}", "dim"))
+                r = subprocess.run(
+                    ["winget", "install", winget_id, "-e", "--silent",
+                     "--accept-source-agreements", "--accept-package-agreements"],
+                    capture_output=True, **ENC, **_NO_WIN)
+                self.after(0, lambda: self.log(
+                    "Installed. Restart to detect." if r.returncode == 0
+                    else "winget failed — opening download page",
+                    "ok" if r.returncode == 0 else "warn"))
+                self.after(500, self._check_tools)
+                if r.returncode == 0:
+                    return
+            self.after(0, lambda: (self.log(f"Opening: {url}", "dim"), webbrowser.open(url)))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _setup_all(self):
+        """Install all missing tools in background without blocking UI."""
+        self.log("=== Setting up all missing tools ===", "warn")
+        def run():
+            for name, info in self.tool_rows.items():
+                if shutil.which(info["cmd"]):
+                    continue
+                self.after(0, lambda n=name: self.log(f"Installing {n}...", "dim"))
+                npm = info.get("npm")
+                wg  = info.get("winget")
+                url = info.get("url", "")
+                if npm and shutil.which("npm"):
+                    r = subprocess.run(npm.split(), capture_output=True, **ENC, **_NO_WIN)
+                    self.after(0, lambda rc=r.returncode, n=name:
+                               self.log(f"{n}: {'OK' if rc == 0 else 'failed'}", "ok" if rc == 0 else "error"))
+                elif wg and OS == "Windows" and shutil.which("winget"):
+                    r = subprocess.run(
+                        ["winget", "install", wg, "-e", "--silent",
+                         "--accept-source-agreements", "--accept-package-agreements"],
+                        capture_output=True, **ENC, **_NO_WIN)
+                    self.after(0, lambda rc=r.returncode, n=name:
+                               self.log(f"{n}: {'OK' if rc == 0 else 'failed'}", "ok" if rc == 0 else "warn"))
+                else:
+                    self.after(0, lambda u=url, n=name: (
+                        self.log(f"{n}: opening download page", "dim"), webbrowser.open(u)))
+            self.after(0, lambda: (
+                self.log("=== Done. Rechecking... ===", "ok"),
+                self._check_tools()
+            ))
+        threading.Thread(target=run, daemon=True).start()
 
     def log(self, msg: str, color: str = C_TEXT):
         self.log_box.configure(state="normal")
