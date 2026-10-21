@@ -1,0 +1,90 @@
+name: Build Launcher Executables
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            artifact: CLIProxyAPI-Manager-Windows.exe
+            pyinstaller_args: --onefile --windowed --name CLIProxyAPI-Manager
+          - os: macos-latest
+            name: macOS
+            artifact: CLIProxyAPI-Manager-macOS
+            pyinstaller_args: --onefile --windowed --name CLIProxyAPI-Manager
+          - os: ubuntu-latest
+            name: Linux
+            artifact: CLIProxyAPI-Manager-Linux
+            pyinstaller_args: --onefile --name CLIProxyAPI-Manager
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.name }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyinstaller customtkinter
+
+      - name: Install tkinter (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y python3-tk
+
+      - name: Build executable
+        run: pyinstaller ${{ matrix.pyinstaller_args }} launcher.py
+
+      - name: Rename artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        run: mv dist/CLIProxyAPI-Manager.exe dist/${{ matrix.artifact }}
+
+      - name: Rename artifact (macOS/Linux)
+        if: matrix.os != 'windows-latest'
+        run: mv dist/CLIProxyAPI-Manager dist/${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: |
+            ## CLIProxyAPI Manager ${{ github.ref_name }}
+
+            Download the launcher for your platform — no Python required.
+
+            | Platform | File |
+            |----------|------|
+            | Windows  | `CLIProxyAPI-Manager-Windows.exe` — double-click to run |
+            | macOS    | `CLIProxyAPI-Manager-macOS` — `chmod +x` then double-click |
+            | Linux    | `CLIProxyAPI-Manager-Linux` — `chmod +x` then run |
+
+            **First time?** See [README](https://github.com/${{ github.repository }}#readme) for setup instructions.
+          files: dist/*
