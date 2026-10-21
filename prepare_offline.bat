@@ -1,50 +1,58 @@
 @echo off
-rem ── CLIProxyAPI Offline Dependency Downloader ────────────────────────────
-rem Run this script on a machine WITH internet access.
-rem It downloads everything into offline_deps\ so you can deploy
-rem to machines WITHOUT internet.
+rem ── CLIProxyAPI 离线包准备工具 ────────────────────────────────────────────
+rem 在有网络的机器上运行，下载全部依赖到 offline_deps\
+rem 然后将整个项目目录（含 offline_deps\）复制到目标机器即可离线部署
 setlocal
 set OUTDIR=%~dp0offline_deps
 mkdir "%OUTDIR%" 2>nul
+mkdir "%OUTDIR%\wheels" 2>nul
 echo.
-echo Downloading offline dependencies to: %OUTDIR%
+echo 准备离线安装包: %OUTDIR%
 echo.
 
-rem ── 1. Find Python ───────────────────────────────────────────────────────
+rem ── 1. 查找 Python ───────────────────────────────────────────────────────
+set PY=
 where py     >nul 2>nul && set PY=py     && goto :pip_download
 where python >nul 2>nul && set PY=python && goto :pip_download
 for /d %%d in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
     if exist "%%d\python.exe" set PY="%%d\python.exe" && goto :pip_download
 )
-echo [ERROR] Python not found. Please install Python first.
-exit /b 1
+echo [跳过] 未找到 Python，跳过 pip wheels 下载
 
-rem ── 2. Download pip wheels ────────────────────────────────────────────────
+rem ── 2. 下载 pip wheels ───────────────────────────────────────────────────
 :pip_download
-echo [1/3] Downloading Python packages (customtkinter + deps)...
-%PY% -m pip download customtkinter --dest "%OUTDIR%\wheels" -q
-if %ERRORLEVEL% neq 0 (echo [WARN] Some packages failed to download) else (
-    echo [OK] Wheels saved to %OUTDIR%\wheels\
+if defined PY (
+    echo [1/3] 下载 Python 依赖包 (customtkinter)...
+    %PY% -m pip download customtkinter --dest "%OUTDIR%\wheels" -q
+    if %ERRORLEVEL% equ 0 (echo [OK]  wheels -> %OUTDIR%\wheels\) else echo [警告] 部分包下载失败
 )
 
-rem ── 3. Download Python installer (Windows) ────────────────────────────────
-echo [2/3] Downloading Python 3.12 installer for offline use...
+rem ── 3. 下载 Python 安装包 ────────────────────────────────────────────────
+echo [2/3] 下载 Python 3.12 安装包 (Windows 离线安装)...
 where curl >nul 2>nul && (
-    curl -L -o "%OUTDIR%\python-3.12-installer.exe" ^
-        "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe" ^
-        --progress-bar
-    echo [OK] Python installer saved.
-) || echo [SKIP] curl not found, skipping Python installer download.
+    curl -L --progress-bar -o "%OUTDIR%\python-3.12-installer.exe" ^
+        "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
+    if %ERRORLEVEL% equ 0 (echo [OK]  Python installer 已保存) else echo [警告] 下载失败
+) || echo [跳过] curl 未找到，请手动下载 Python 安装包
 
-rem ── 4. Summary ───────────────────────────────────────────────────────────
+rem ── 4. 保存 Docker 镜像 ──────────────────────────────────────────────────
+echo [3/3] 保存 Docker 镜像 (最大依赖，约 100-200MB)...
+where docker >nul 2>nul && docker info >nul 2>nul && (
+    docker pull eceasy/cli-proxy-api:latest
+    docker save eceasy/cli-proxy-api:latest -o "%OUTDIR%\cli-proxy-api-image.tar"
+    if %ERRORLEVEL% equ 0 (echo [OK]  Docker 镜像已保存: %OUTDIR%\cli-proxy-api-image.tar) else echo [警告] 镜像保存失败
+) || echo [跳过] Docker 未运行，请先启动 Docker Desktop 再运行此脚本
+
+rem ── 5. 汇总 ─────────────────────────────────────────────────────────────
 echo.
-echo [3/3] Done!
-echo.
-echo Contents of %OUTDIR%:
+echo ══ 完成 ══════════════════════════════════
+echo 已保存到: %OUTDIR%
 dir "%OUTDIR%" /b
 echo.
-echo To deploy offline:
-echo   1. Copy the entire CodeXX folder (including offline_deps\) to the target machine
-echo   2. Double-click start.bat — it will use offline_deps\ automatically
+echo 离线部署步骤:
+echo   1. 将整个项目文件夹（含 offline_deps\）复制到目标机器
+echo   2. 双击 Server.bat 或 Client.bat
+echo   3. Docker 镜像加载（首次）:
+echo      docker load -i offline_deps\cli-proxy-api-image.tar
 echo.
 pause
