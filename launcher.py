@@ -351,9 +351,16 @@ class App(ctk.CTk):
         colors = {"normal": C_TEXT, "dim": C_DIM, "ok": C_GREEN,
                   "warn": C_ORANGE, "error": C_RED}
         color = colors.get(kind, C_TEXT)
-        ts = datetime.now().strftime("%H:%M:%S")
+        ts  = datetime.now().strftime("%H:%M:%S")
+        text = f"[{ts}] {msg}\n"
         self.log_box.configure(state="normal")
-        self.log_box.insert("end", f"[{ts}] {msg}\n")
+        try:                                       # apply per-line color via underlying tk Text
+            tb = self.log_box._textbox
+            tag = f"c_{kind}"
+            tb.tag_configure(tag, foreground=color)
+            tb.insert("end", text, tag)
+        except Exception:
+            self.log_box.insert("end", text)
         self.log_box.configure(state="disabled")
         self.log_box.see("end")
 
@@ -586,7 +593,8 @@ class App(ctk.CTk):
                     ))
             proc.wait()
         except Exception as e:
-            self.after(0, lambda: self.log(f"Error: {e}", "error"))
+            msg = str(e)
+            self.after(0, lambda m=msg: self.log(f"Error: {m}", "error"))
         self.after(5000, self._refresh)
 
     def _tailscale_start(self):
@@ -643,6 +651,8 @@ class App(ctk.CTk):
                      done=self._refresh)
 
     def _stop_service(self):
+        if not docker_running():
+            self.log("Docker not running.", "error"); return
         self._run_bg(lambda: run_compose(["down"], self._safe_log), done=self._refresh)
 
     def _restart_service(self):
@@ -654,7 +664,9 @@ class App(ctk.CTk):
         if not docker_running():
             self.log("Docker not running.", "error"); return
         def do():
-            run_compose(["pull"], self._safe_log)
+            rc = run_compose(["pull"], self._safe_log)
+            if rc != 0:
+                self._safe_log("Pull failed — starting with existing image.", "warn")
             run_compose(["up", "-d", "--pull", "never"], self._safe_log)
         self._run_bg(do, done=lambda: (self._refresh(), self.log("Update complete!", "ok")))
 
@@ -743,7 +755,9 @@ class App(ctk.CTk):
         self._refresh()
 
         def do():
-            run_compose(["pull"], self._safe_log)
+            rc = run_compose(["pull"], self._safe_log)
+            if rc != 0:
+                self._safe_log("Pull failed — using existing image.", "warn")
             run_compose(["up", "-d", "--pull", "never"], self._safe_log)
         self._run_bg(do, done=lambda: (
             self._refresh(),
@@ -758,15 +772,15 @@ class App(ctk.CTk):
         self.after(0, lambda m=msg, k=kind: self.log(m, k))
 
     def _run_bg(self, fn, done=None):
-        """Run fn in background thread; schedule done() on main thread when finished."""
+        """Run fn in background thread; schedule done() on main thread only on success."""
         def worker():
             try:
                 fn()
-            except Exception as e:
-                self.after(0, lambda: self.log(f"Error: {e}", "error"))
-            finally:
                 if done:
                     self.after(0, done)
+            except Exception as e:
+                msg = str(e)
+                self.after(0, lambda m=msg: self.log(f"Error: {m}", "error"))
         threading.Thread(target=worker, daemon=True).start()
 
     def on_close(self):
