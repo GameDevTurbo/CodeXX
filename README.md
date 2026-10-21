@@ -23,4 +23,4 @@
 |------|------|
 | Windows | [docs/windows.md](docs/windows.md) |
 | macOS | [docs/macos.md](docs/macos.md) |
-| Linux \u4e91\u670d\u52a1\u5668 | [docs/linux.md](docs/linux.md) |
+| Linux \u4e91\u670d\u52a1\u5668 | [docs/linux.md](docs/linux.md) |\n---\n\n## 相关项目\n\n- **[CodeXX-Client](https://github.com/GameDevTurbo/CodeXX-Client)** — 使用端工具（连接服务 + 配置本机 AI 工具）\n
