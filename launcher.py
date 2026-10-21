@@ -3,11 +3,14 @@
 
 import os
 import sys
+import json
+import re
 import platform
 import subprocess
 import threading
 import secrets
 import shutil
+import socket
 from pathlib import Path
 from datetime import datetime
 
@@ -91,6 +94,29 @@ def rand_pwd(n=20) -> str:
 def open_browser(url: str):
     import webbrowser
     webbrowser.open(url)
+
+def get_tailscale_ip() -> str:
+    try:
+        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+def get_local_ip() -> str:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return ""
+
+def get_api_keys() -> list:
+    if not CFG_PATH.exists():
+        return []
+    text = CFG_PATH.read_text(encoding="utf-8")
+    return re.findall(r'^\s*-\s*"?(sk-[a-f0-9]+)"?', text, re.MULTILINE)
 
 # ── Main window ────────────────────────────────────────────────────────────────
 
@@ -196,6 +222,10 @@ class App(ctk.CTk):
                       fg_color="#2a2a50", hover_color="#1e1e3c",
                       command=self._update_image).pack(side="left")
 
+        # Connection info card (shown when service is running)
+        self.conn_frame = ctk.CTkFrame(self, fg_color="#0f1f0f", corner_radius=8)
+        # built lazily in _show_connect_info
+
         # API bar
         api_bar = ctk.CTkFrame(self, fg_color=C_PANEL, corner_radius=6)
         api_bar.pack(fill="x", padx=20, pady=(0,6))
@@ -298,12 +328,98 @@ class App(ctk.CTk):
         # Step 3
         if svc == "running":
             self._set_step(self.s3, C_GREEN, "Running", None, None)
+            self._show_connect_info()
         elif svc in ("exited", "created"):
             self._set_step(self.s3, C_RED, "Stopped",
                            "Start", C_GREEN, self._start_service)
+            self.conn_frame.pack_forget()
         else:
             self._set_step(self.s3, C_DIM, "Not deployed",
                            "Deploy", C_BLUE, self._deploy)
+            self.conn_frame.pack_forget()
+
+    def _show_connect_info(self):
+        """Build/refresh the connection info card when service is running."""
+        ts_ip    = get_tailscale_ip()
+        local_ip = get_local_ip()
+        keys     = get_api_keys()
+        key      = keys[0] if keys else "—"
+
+        # Clear and rebuild
+        for w in self.conn_frame.winfo_children():
+            w.destroy()
+
+        ctk.CTkLabel(self.conn_frame, text="Connection Info",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=C_GREEN).grid(row=0, column=0, columnspan=3,
+                                               sticky="w", padx=14, pady=(10,4))
+
+        rows = []
+        if ts_ip:
+            rows.append(("Tailscale", f"http://{ts_ip}:{PORT}/v1"))
+        if local_ip:
+            rows.append(("Local LAN", f"http://{local_ip}:{PORT}/v1"))
+        rows.append(("API Key",  key))
+
+        for i, (label, value) in enumerate(rows, start=1):
+            ctk.CTkLabel(self.conn_frame, text=label, text_color=C_DIM,
+                         font=ctk.CTkFont(size=9), width=80, anchor="w"
+                         ).grid(row=i, column=0, padx=(14,4), pady=2, sticky="w")
+            ctk.CTkLabel(self.conn_frame,
+                         text=value[:52] + ("…" if len(value) > 52 else ""),
+                         text_color=C_TEXT, font=ctk.CTkFont(family="Courier", size=9),
+                         anchor="w"
+                         ).grid(row=i, column=1, padx=4, pady=2, sticky="w")
+            v = value
+            ctk.CTkButton(self.conn_frame, text="Copy", width=56, height=22,
+                          font=ctk.CTkFont(size=8),
+                          fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
+                          border_width=1, border_color=C_DIM,
+                          command=lambda x=v: self._copy(x)
+                          ).grid(row=i, column=2, padx=(4,14), pady=2)
+
+        btn_row = i + 1
+        ctk.CTkButton(self.conn_frame, text="Export .cliproxy file",
+                      font=ctk.CTkFont(size=9), width=160, height=26,
+                      fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
+                      border_width=1, border_color=C_DIM,
+                      command=lambda: self._export(ts_ip or local_ip, key)
+                      ).grid(row=btn_row, column=0, columnspan=2,
+                             padx=14, pady=(6,10), sticky="w")
+
+        client_py = SCRIPT_DIR / "client.py"
+        if client_py.exists():
+            ctk.CTkButton(self.conn_frame, text="Open Client Tool →",
+                          font=ctk.CTkFont(size=9), width=150, height=26,
+                          fg_color=C_BLUE, hover_color="#2a6fd4",
+                          command=lambda: subprocess.Popen(
+                              [sys.executable, str(client_py)],
+                              cwd=str(SCRIPT_DIR))
+                          ).grid(row=btn_row, column=2, padx=14, pady=(6,10))
+
+        self.conn_frame.pack(fill="x", padx=20, pady=(0,8),
+                             before=self.log_box)
+
+    def _copy(self, text: str):
+        self.clipboard_clear()
+        self.clipboard_append(text)
+
+    def _export(self, server_ip: str, api_key: str):
+        from tkinter import filedialog
+        data = {
+            "api_url":  f"http://{server_ip}:{PORT}/v1" if server_ip else API_URL,
+            "api_key":  api_key,
+            "mgmt_url": f"http://{server_ip}:{PORT}/management.html" if server_ip else MGMT_URL,
+            "server":   server_ip or "localhost",
+            "port":     PORT,
+        }
+        path = filedialog.asksaveasfilename(
+            defaultextension=".cliproxy",
+            filetypes=[("CLIProxy config", "*.cliproxy"), ("JSON", "*.json")],
+            initialfile="cliproxy-connection")
+        if path:
+            Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+            self.log(f"Connection file saved: {path}", "ok")
 
     def _set_step(self, s, dot_color, stat_text, btn_text, btn_color, btn_cmd=None):
         s["dot"].configure(text_color=dot_color)
