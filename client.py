@@ -347,30 +347,36 @@ class ClientApp(ctk.CTk):
         self.after(0, lambda: self._ts_apply(ts))
 
     def _ts_apply(self, ts: dict):
-        """Update Tailscale UI. Use grid-like fixed visibility to avoid reorder bugs."""
-        # Reset all first
+        """Update Tailscale UI. Reset all buttons first to avoid reorder bugs."""
         self.btn_ts_connect.pack_forget()
         self.btn_ts_disconnect.pack_forget()
 
         if not ts["installed"]:
             self.ts_dot.configure(text_color=C_DIM)
-            self.ts_stat.configure(text="Not installed", text_color=C_DIM)
+            self.ts_stat.configure(
+                text="Not installed — needed for remote access", text_color=C_DIM)
             self.btn_ts_connect.configure(text="Download", fg_color=C_DIM,
                                            command=lambda: webbrowser.open("https://tailscale.com/download"))
             self.btn_ts_connect.pack(side="left", padx=(0,6))
+
         elif ts["connected"]:
             self.ts_dot.configure(text_color=C_GREEN)
-            self.ts_stat.configure(text=f"Connected · {ts['ip']}", text_color=C_GREEN)
+            self.ts_stat.configure(
+                text=f"Connected · {ts['ip']} — ready for remote access", text_color=C_GREEN)
             self.btn_ts_disconnect.pack(side="left", padx=(0,6))
+
         elif ts["state"] == "needs_login":
             self.ts_dot.configure(text_color=C_ORANGE)
-            self.ts_stat.configure(text="Not logged in", text_color=C_ORANGE)
+            self.ts_stat.configure(
+                text="Not logged in — click Login to authenticate", text_color=C_ORANGE)
             self.btn_ts_connect.configure(text="Login", fg_color=C_ORANGE,
                                            command=self._ts_login)
             self.btn_ts_connect.pack(side="left", padx=(0,6))
+
         else:
             self.ts_dot.configure(text_color=C_RED)
-            self.ts_stat.configure(text=f"Disconnected", text_color=C_RED)
+            self.ts_stat.configure(
+                text="Disconnected — click Connect to rejoin network", text_color=C_RED)
             self.btn_ts_connect.configure(text="Connect", fg_color=C_GREEN,
                                            command=self._ts_connect)
             self.btn_ts_connect.pack(side="left", padx=(0,6))
@@ -406,18 +412,37 @@ class ClientApp(ctk.CTk):
 
     def _ts_login(self):
         exe = find_tailscale()
-        if not exe: return
+        if not exe:
+            self.log("Tailscale not installed. Download from tailscale.com/download", "error")
+            webbrowser.open("https://tailscale.com/download")
+            return
+
+        self.log("Opening Tailscale login — a browser window should appear...", "warn")
+
         if OS == "Windows":
-            gui = Path(r"C:\Program Files\Tailscale\Tailscale.exe")
+            # Run in a VISIBLE terminal so user can see the auth URL
+            subprocess.Popen(
+                ["powershell", "-NoExit", "-Command",
+                 f"Write-Host 'Tailscale Login' -ForegroundColor Cyan; "
+                 f"& '{exe}' login; "
+                 f"Write-Host 'Done. Close this window.' -ForegroundColor Green"],
+                creationflags=subprocess.CREATE_NEW_CONSOLE)
+        elif OS == "Darwin":
+            if Path("/Applications/Tailscale.app").exists():
+                subprocess.Popen(["open", "/Applications/Tailscale.app"])
+            else:
+                subprocess.Popen([exe, "login"])
         else:
-            gui = Path("/Applications/Tailscale.app")
-        if gui.exists():
-            subprocess.Popen([str(gui)], **_NO_WIN) if OS == "Windows" \
-                else subprocess.Popen(["open", str(gui)])
-            self.log("Tailscale app opened — click Log In.", "warn")
-        else:
-            subprocess.Popen([exe, "up"], **_NO_WIN)
-        self.after(5000, self._ts_refresh)
+            # Linux: try to show in a terminal
+            for term in ("gnome-terminal", "xterm", "konsole"):
+                if shutil.which(term):
+                    subprocess.Popen([term, "--", "bash", "-c",
+                                       f"{exe} login; read -p 'Press Enter to close'"])
+                    break
+            else:
+                subprocess.Popen([exe, "login"])
+
+        self.after(8000, self._ts_refresh)
 
     # ── Tool checker ───────────────────────────────────────────────────────────
 
@@ -428,7 +453,7 @@ class ClientApp(ctk.CTk):
             if found:
                 try:
                     r = subprocess.run([cmd, "--version"], capture_output=True,
-                                       text=True, timeout=5)
+                                       timeout=5, **ENC, **_NO_WIN)
                     ver = (r.stdout or r.stderr).strip().splitlines()[0][:30]
                 except Exception:
                     ver = "installed"
