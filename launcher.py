@@ -33,6 +33,10 @@ CREDS_PATH = SCRIPT_DIR / ".credentials.json"
 
 # ── Docker helpers ─────────────────────────────────────────────────────────────
 
+ENC = {"encoding": "utf-8", "errors": "replace"}
+
+# ── Docker helpers ─────────────────────────────────────────────────────────────
+
 def docker_running() -> bool:
     r = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
     return r.returncode == 0
@@ -40,7 +44,7 @@ def docker_running() -> bool:
 def service_status() -> str:
     r = subprocess.run(
         ["docker", "inspect", "--format", "{{.State.Status}}", CONTAINER],
-        capture_output=True, text=True, timeout=5)
+        capture_output=True, text=True, timeout=5, **ENC)
     return r.stdout.strip() if r.returncode == 0 else ""
 
 def run_compose(args: list, log_fn):
@@ -49,7 +53,7 @@ def run_compose(args: list, log_fn):
         ["docker", "compose"] + args,
         cwd=str(SCRIPT_DIR),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True)
+        text=True, **ENC)
     for line in proc.stdout:
         line = line.rstrip()
         if line:
@@ -98,7 +102,8 @@ def open_browser(url: str):
 
 def get_tailscale_ip() -> str:
     try:
-        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(["tailscale", "ip", "-4"],
+                           capture_output=True, text=True, timeout=5, **ENC)
         return r.stdout.strip() if r.returncode == 0 else ""
     except Exception:
         return ""
@@ -109,7 +114,7 @@ def tailscale_status() -> dict:
         return {"installed": False, "connected": False, "ip": "", "state": "not_installed"}
     try:
         r = subprocess.run(["tailscale", "status", "--json"],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5, **ENC)
         if r.returncode != 0:
             return {"installed": True, "connected": False, "ip": "", "state": "stopped"}
         data = json.loads(r.stdout)
