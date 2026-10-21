@@ -4,6 +4,11 @@ auths/
 .credentials.json
 offline_deps/
 
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
 # Logs
 logs/
 
