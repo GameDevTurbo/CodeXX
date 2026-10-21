@@ -203,6 +203,7 @@ class App(ctk.CTk):
         self.configure(fg_color=C_BG)
 
         self._docker_poll = None
+        self._refreshing  = False   # prevent concurrent refresh threads
         self._build_ui()
         self._refresh()
         self._auto = self.after(8000, self._tick)
@@ -369,21 +370,36 @@ class App(ctk.CTk):
         self.log_box.delete("1.0", "end")
         self.log_box.configure(state="disabled")
 
-    # ── Status refresh ─────────────────────────────────────────────────────────
+    # ── Status refresh (non-blocking) ─────────────────────────────────────────
 
     def _refresh(self):
-        docker_ok = docker_running()
-        cfg_ok    = CFG_PATH.exists()
-        svc       = service_status() if docker_ok else ""
+        """Start a background thread to collect status, then update UI."""
+        if self._refreshing:
+            return
+        self._refreshing = True
+        threading.Thread(target=self._refresh_worker, daemon=True).start()
 
-        # Step 1
+    def _refresh_worker(self):
+        """Collect all status info in background (no UI calls here)."""
+        try:
+            docker_ok = docker_running()
+            cfg_ok    = CFG_PATH.exists()
+            svc       = service_status() if docker_ok else ""
+            ts        = tailscale_status()
+            self.after(0, lambda: self._apply_status(docker_ok, cfg_ok, svc, ts))
+        finally:
+            self._refreshing = False
+
+    def _apply_status(self, docker_ok: bool, cfg_ok: bool, svc: str, ts: dict):
+        """Apply collected status to UI — runs on main thread."""
+        # Step 1: Docker
         if docker_ok:
             self._set_step(self.s1, C_GREEN, "Running", None, None)
         else:
             self._set_step(self.s1, C_ORANGE, "Not running",
                            "Start Docker", C_ORANGE, self._start_docker)
 
-        # Step 2
+        # Step 2: Config
         if cfg_ok:
             self._set_step(self.s2, C_GREEN, "Ready", None, None)
             self.wiz_frame.pack_forget()
@@ -391,7 +407,7 @@ class App(ctk.CTk):
             self._set_step(self.s2, C_ORANGE, "Not configured",
                            "Setup", C_BLUE, self._show_wizard)
 
-        # Step 3
+        # Step 3: Service
         if svc == "running":
             self._set_step(self.s3, C_GREEN, "Running", None, None)
             self._show_connect_info()
@@ -404,8 +420,7 @@ class App(ctk.CTk):
                            "Deploy", C_BLUE, self._deploy)
             self.conn_frame.pack_forget()
 
-        # Step 4: Tailscale (optional)
-        ts = tailscale_status()
+        # Step 4: Tailscale
         if ts["state"] == "not_installed":
             self._set_step(self.s4, C_DIM, "Not installed",
                            "Download", C_DIM, self._tailscale_download)
@@ -420,13 +435,15 @@ class App(ctk.CTk):
                            "Start", C_ORANGE, self._tailscale_start)
 
     def _show_connect_info(self):
-        """Build/refresh the connection info card when service is running."""
+        """Fetch network info in background, then build the card."""
+        threading.Thread(target=self._build_connect_info, daemon=True).start()
+
+    def _build_connect_info(self):
+        """Runs in background thread — collects data, then updates UI on main thread."""
         ts_ip    = get_tailscale_ip()
         local_ip = get_local_ip()
         keys     = get_api_keys()
         key      = keys[0] if keys else "—"
-
-        # Load saved credentials (password)
         mgmt_pwd = "—"
         if CREDS_PATH.exists():
             try:
@@ -434,12 +451,21 @@ class App(ctk.CTk):
                 mgmt_pwd = creds.get("mgmt_password", "—")
             except Exception:
                 pass
-
-        # Build mgmt URL with real IP
-        server_ip = ts_ip or local_ip or "localhost"
+        server_ip     = ts_ip or local_ip or "localhost"
         mgmt_url_real = f"http://{server_ip}:{PORT}/management.html"
+        rows = []
+        if ts_ip:
+            rows.append(("Tailscale API", f"http://{ts_ip}:{PORT}/v1"))
+        if local_ip:
+            rows.append(("LAN API",       f"http://{local_ip}:{PORT}/v1"))
+        rows.append(("API Key",      key))
+        rows.append(("Mgmt Panel",   mgmt_url_real))
+        rows.append(("Mgmt Password", mgmt_pwd))
+        self.after(0, lambda: self._render_connect_info(rows, server_ip, key))
 
-        # Clear and rebuild
+    def _render_connect_info(self, rows, server_ip, key):
+        """Runs on main thread — builds the connection info card."""
+        # Clear and rebuild widgets
         for w in self.conn_frame.winfo_children():
             w.destroy()
 
@@ -447,15 +473,6 @@ class App(ctk.CTk):
                      font=ctk.CTkFont(size=11, weight="bold"),
                      text_color=C_GREEN).grid(row=0, column=0, columnspan=3,
                                                sticky="w", padx=14, pady=(10,4))
-
-        rows = []
-        if ts_ip:
-            rows.append(("Tailscale API", f"http://{ts_ip}:{PORT}/v1"))
-        if local_ip:
-            rows.append(("LAN API",       f"http://{local_ip}:{PORT}/v1"))
-        rows.append(("API Key",           key))
-        rows.append(("Mgmt Panel",        mgmt_url_real))
-        rows.append(("Mgmt Password",     mgmt_pwd))
 
         for i, (label, value) in enumerate(rows, start=1):
             ctk.CTkLabel(self.conn_frame, text=label, text_color=C_DIM,
