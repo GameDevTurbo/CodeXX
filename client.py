@@ -54,7 +54,7 @@ def ts_status() -> dict:
         return {"installed": False, "connected": False, "ip": "", "state": "not_installed"}
     try:
         r = subprocess.run([exe, "status", "--json"],
-                           capture_output=True, text=True, timeout=8, **ENC, **_NO_WIN)
+                           capture_output=True, timeout=8, **ENC, **_NO_WIN)
         if r.returncode != 0:
             return {"installed": True, "connected": False, "ip": "", "state": "stopped"}
         data = json.loads(r.stdout)
@@ -85,14 +85,10 @@ def test_connection(api_url: str, api_key: str) -> tuple[bool, str]:
 
 
 def get_claude_settings_path() -> Path:
-    if OS == "Windows":
-        return Path.home() / ".claude" / "settings.json"
     return Path.home() / ".claude" / "settings.json"
 
 
 def get_ccswitch_config_path() -> Path:
-    if OS == "Windows":
-        return Path.home() / ".codex" / "config.toml"
     return Path.home() / ".codex" / "config.toml"
 
 
@@ -123,7 +119,6 @@ def configure_ccswitch(api_url: str, api_key: str, name: str = "cliproxy") -> st
     )
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     # Remove existing block for same name
-    import re
     text = re.sub(
         rf'\n\[model_providers\.{re.escape(name)}\][^\[]*', "", text)
     text = text.rstrip() + "\n" + block
@@ -143,7 +138,6 @@ def set_env_vars(api_url: str, api_key: str) -> str:
         lines = profile.read_text(encoding="utf-8") if profile.exists() else ""
         for key, val in [("OPENAI_BASE_URL", api_url), ("OPENAI_API_KEY", api_key),
                           ("ANTHROPIC_BASE_URL", api_url), ("ANTHROPIC_API_KEY", api_key)]:
-            import re
             lines = re.sub(rf'^export {key}=.*$', "", lines, flags=re.MULTILINE)
             lines += f'\nexport {key}="{val}"'
         profile.write_text(lines.strip() + "\n", encoding="utf-8")
@@ -353,16 +347,20 @@ class ClientApp(ctk.CTk):
         self.after(0, lambda: self._ts_apply(ts))
 
     def _ts_apply(self, ts: dict):
+        """Update Tailscale UI. Use grid-like fixed visibility to avoid reorder bugs."""
+        # Reset all first
+        self.btn_ts_connect.pack_forget()
+        self.btn_ts_disconnect.pack_forget()
+
         if not ts["installed"]:
             self.ts_dot.configure(text_color=C_DIM)
-            self.ts_stat.configure(text="Not installed — download from tailscale.com", text_color=C_DIM)
+            self.ts_stat.configure(text="Not installed", text_color=C_DIM)
             self.btn_ts_connect.configure(text="Download", fg_color=C_DIM,
                                            command=lambda: webbrowser.open("https://tailscale.com/download"))
-            self.btn_ts_disconnect.pack_forget()
+            self.btn_ts_connect.pack(side="left", padx=(0,6))
         elif ts["connected"]:
             self.ts_dot.configure(text_color=C_GREEN)
             self.ts_stat.configure(text=f"Connected · {ts['ip']}", text_color=C_GREEN)
-            self.btn_ts_connect.pack_forget()
             self.btn_ts_disconnect.pack(side="left", padx=(0,6))
         elif ts["state"] == "needs_login":
             self.ts_dot.configure(text_color=C_ORANGE)
@@ -370,14 +368,12 @@ class ClientApp(ctk.CTk):
             self.btn_ts_connect.configure(text="Login", fg_color=C_ORANGE,
                                            command=self._ts_login)
             self.btn_ts_connect.pack(side="left", padx=(0,6))
-            self.btn_ts_disconnect.pack_forget()
         else:
             self.ts_dot.configure(text_color=C_RED)
-            self.ts_stat.configure(text=f"Disconnected ({ts['state']})", text_color=C_RED)
+            self.ts_stat.configure(text=f"Disconnected", text_color=C_RED)
             self.btn_ts_connect.configure(text="Connect", fg_color=C_GREEN,
                                            command=self._ts_connect)
             self.btn_ts_connect.pack(side="left", padx=(0,6))
-            self.btn_ts_disconnect.pack_forget()
 
     def _ts_connect(self):
         exe = find_tailscale()
@@ -385,10 +381,11 @@ class ClientApp(ctk.CTk):
             self.log("Tailscale not found.", "error"); return
         self.log("Connecting Tailscale...", "dim")
         def run():
-            r = subprocess.run([exe, "up"], capture_output=True, **ENC, **_NO_WIN)
+            r = subprocess.run([exe, "up"], capture_output=True, timeout=30, **ENC, **_NO_WIN)
+            msg = r.stderr.strip() or r.stdout.strip()
             self.after(0, lambda: (
-                self.log("Tailscale connected." if r.returncode == 0
-                         else f"Error: {r.stderr.strip()}", "ok" if r.returncode == 0 else "error"),
+                self.log("Tailscale connected." if r.returncode == 0 else f"Error: {msg}",
+                         "ok" if r.returncode == 0 else "error"),
                 self._ts_refresh()
             ))
         threading.Thread(target=run, daemon=True).start()
@@ -399,7 +396,7 @@ class ClientApp(ctk.CTk):
             self.log("Tailscale not found.", "error"); return
         self.log("Disconnecting Tailscale (LAN will be restored)...", "dim")
         def run():
-            r = subprocess.run([exe, "down"], capture_output=True, **ENC, **_NO_WIN)
+            r = subprocess.run([exe, "down"], capture_output=True, timeout=15, **ENC, **_NO_WIN)
             self.after(0, lambda: (
                 self.log("Tailscale disconnected. LAN access restored." if r.returncode == 0
                          else f"Error: {r.stderr.strip()}", "ok" if r.returncode == 0 else "error"),
@@ -446,7 +443,6 @@ class ClientApp(ctk.CTk):
     def _install_tool(self, url: str, npm_cmd: str | None):
         if npm_cmd and shutil.which("npm"):
             self.log(f"Running: {npm_cmd}", "dim")
-            import threading
             def run():
                 r = subprocess.run(npm_cmd.split(), capture_output=True,
                                    text=True, encoding="utf-8", errors="replace")
@@ -492,14 +488,17 @@ class ClientApp(ctk.CTk):
             self.test_lbl.configure(text="Enter URL and Key first", text_color=C_RED)
             return
         self.test_lbl.configure(text="Testing...", text_color=C_DIM)
-        self.update()
-        ok, msg = test_connection(url, key)
-        if ok:
-            self.test_lbl.configure(text=f"✓ {msg[:60]}", text_color=C_GREEN)
-            self.log(f"Connection OK — {msg}", C_GREEN)
-        else:
-            self.test_lbl.configure(text=f"✗ Failed", text_color=C_RED)
-            self.log(f"Connection failed: {msg}", C_RED)
+        def run():
+            ok, msg = test_connection(url, key)
+            if ok:
+                self.after(0, lambda: (
+                    self.test_lbl.configure(text=f"✓ {msg[:60]}", text_color=C_GREEN),
+                    self.log(f"Connection OK — {msg}", C_GREEN)))
+            else:
+                self.after(0, lambda: (
+                    self.test_lbl.configure(text="✗ Failed", text_color=C_RED),
+                    self.log(f"Connection failed: {msg}", C_RED)))
+        threading.Thread(target=run, daemon=True).start()
 
     def _cfg_claude(self):
         url, key = self._get_inputs()
