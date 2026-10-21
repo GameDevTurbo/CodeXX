@@ -1,2 +1,3 @@
 ﻿@echo off
-powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0launcher.ps1"
+python -m pip install customtkinter -q 2>nul
+python "%~dp0launcher.py"
