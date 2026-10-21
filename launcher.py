@@ -38,8 +38,11 @@ ENC = {"encoding": "utf-8", "errors": "replace"}
 # ── Docker helpers ─────────────────────────────────────────────────────────────
 
 def docker_running() -> bool:
-    r = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
-    return r.returncode == 0
+    try:
+        r = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
+        return r.returncode == 0
+    except Exception:
+        return False
 
 def service_status() -> str:
     r = subprocess.run(
