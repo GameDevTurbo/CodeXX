@@ -311,8 +311,10 @@ class ClientApp(ctk.CTk):
         return self.url_entry.get().strip(), self.key_entry.get().strip()
 
     def _import_file(self):
-        from tkinter import filedialog
-        path = filedialog.askopenfilename(
+        import tkinter.filedialog as fd
+        path = fd.askopenfilename(
+            parent=self,
+            title="Import connection file",
             filetypes=[("CLIProxy config", "*.cliproxy"), ("JSON", "*.json"), ("All", "*.*")])
         if not path:
             return

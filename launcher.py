@@ -518,7 +518,6 @@ class App(ctk.CTk):
         self.clipboard_append(text)
 
     def _export(self, server_ip: str, api_key: str):
-        from tkinter import filedialog
         data = {
             "api_url":  f"http://{server_ip}:{PORT}/v1" if server_ip else API_URL,
             "api_key":  api_key,
@@ -526,13 +525,16 @@ class App(ctk.CTk):
             "server":   server_ip or "localhost",
             "port":     PORT,
         }
-        path = filedialog.asksaveasfilename(
+        import tkinter.filedialog as fd
+        path = fd.asksaveasfilename(
+            parent=self,
             defaultextension=".cliproxy",
             filetypes=[("CLIProxy config", "*.cliproxy"), ("JSON", "*.json")],
-            initialfile="cliproxy-connection")
+            initialfile="cliproxy-connection",
+            title="Export connection file")
         if path:
             Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
-            self.log(f"Connection file saved: {path}", "ok")
+            self.log(f"Saved: {path}", "ok")
 
     def _set_step(self, s, dot_color, stat_text, btn_text, btn_color, btn_cmd=None):
         s["dot"].configure(text_color=dot_color)
