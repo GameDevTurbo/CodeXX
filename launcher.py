@@ -305,7 +305,7 @@ class App(ctk.CTk):
             self._set_step(self.s3, C_DIM, "Not deployed",
                            "Deploy", C_BLUE, self._deploy)
 
-    def _set_step(self, s, dot_color, stat_text, btn_text, btn_color, btn_cmd):
+    def _set_step(self, s, dot_color, stat_text, btn_text, btn_color, btn_cmd=None):
         s["dot"].configure(text_color=dot_color)
         s["stat"].configure(text=stat_text,
                              text_color=dot_color if dot_color != C_DIM else C_DIM)
