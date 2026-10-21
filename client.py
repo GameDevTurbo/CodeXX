@@ -432,32 +432,43 @@ class ClientApp(ctk.CTk):
             webbrowser.open("https://tailscale.com/download")
             return
 
-        self.log("Opening Tailscale login — a browser window should appear...", "warn")
+        self.log("Opening Tailscale login page in browser...", "warn")
+        self.log("Complete the login in the browser, then wait for status to update.", "dim")
 
-        if OS == "Windows":
-            # Run in a VISIBLE terminal so user can see the auth URL
-            subprocess.Popen(
-                ["powershell", "-NoExit", "-Command",
-                 f"Write-Host 'Tailscale Login' -ForegroundColor Cyan; "
-                 f"& '{exe}' login; "
-                 f"Write-Host 'Done. Close this window.' -ForegroundColor Green"],
-                creationflags=subprocess.CREATE_NEW_CONSOLE)
-        elif OS == "Darwin":
-            if Path("/Applications/Tailscale.app").exists():
-                subprocess.Popen(["open", "/Applications/Tailscale.app"])
-            else:
-                subprocess.Popen([exe, "login"])
-        else:
-            # Linux: try to show in a terminal
-            for term in ("gnome-terminal", "xterm", "konsole"):
-                if shutil.which(term):
-                    subprocess.Popen([term, "--", "bash", "-c",
-                                       f"{exe} login; read -p 'Press Enter to close'"])
-                    break
-            else:
-                subprocess.Popen([exe, "login"])
+        # Open browser immediately — most reliable cross-platform
+        webbrowser.open("https://login.tailscale.com/")
 
-        self.after(8000, self._ts_refresh)
+        # Run 'tailscale up' in background (may also trigger OS browser auth)
+        def run():
+            try:
+                subprocess.run([exe, "up"], capture_output=True,
+                               timeout=90, **ENC, **_NO_WIN)
+            except Exception:
+                pass
+        threading.Thread(target=run, daemon=True).start()
+
+        # Poll status until connected (max 60s)
+        self.after(3000, lambda: self._ts_poll_until_connected(0))
+
+    def _ts_poll_until_connected(self, attempt: int):
+        """Poll Tailscale status after login, update UI when connected."""
+        def check():
+            ts = ts_status()
+            if ts["connected"]:
+                self.after(0, lambda: (
+                    self._ts_apply(ts),
+                    self.log(f"Tailscale connected: {ts['ip']}", "ok")
+                ))
+            elif attempt < 20:
+                self.after(0, lambda a=attempt: self.log(
+                    f"Waiting for Tailscale auth... ({a*3}s)", "dim"))
+                self.after(3000, lambda: self._ts_poll_until_connected(attempt + 1))
+            else:
+                self.after(0, lambda: (
+                    self._ts_refresh(),
+                    self.log("Login timed out. Check your browser and try again.", "error")
+                ))
+        threading.Thread(target=check, daemon=True).start()
 
     # ── Tool checker ───────────────────────────────────────────────────────────
 
