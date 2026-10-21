@@ -1,6 +1,31 @@
 # CLIProxyAPI
 
-将 ChatGPT Plus / Claude Pro 等 AI 订阅转化为标准 OpenAI API，供多设备共享。
+将 ChatGPT Plus / Claude Pro 等 AI 订阅转为标准 OpenAI API，供多设备共享。
+
+> ⚠️ 违反各平台服务条款，存在封号风险，仅供个人学习研究。
+
+## 快速开始
+
+| 平台 | 操作 |
+|------|------|
+| Windows | 双击 `start.bat` |
+| macOS | `bash start.sh` |
+| Linux 云服务器 | `bash scripts/deploy.sh --expose` |
+
+详细说明见各平台指南：
+- [🖥 Windows](docs/windows.md)
+- [🍎 macOS](docs/macos.md)
+- [🖧 Linux 云服务器](docs/linux.md)
+
+## 工具说明
+
+| 工具 | 用途 |
+|------|------|
+| `launcher.py` | 部署端 GUI：服务管理 + 连接信息导出 |
+| `client.py` | 使用端 GUI：导入配置 + 工具检测 + Tailscale 管理 |
+| `prepare_offline.bat` | 提前下载依赖包，用于无网环境部署 |
+| `start.bat` | Windows 双击启动器 |
+| `start.sh` | macOS/Linux 启动器 |
 
 > 上游项目: https://github.com/router-for-me/CLIProxyAPI
 
