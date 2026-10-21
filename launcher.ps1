@@ -79,7 +79,7 @@ function MkStepRow($num,$name,$y){
     $btn.Cursor = "Hand"; $btn.Visible = $false
     $row.Controls.Add($btn)
 
-    return @{$"dot"=$dot; $"stat"=$lStat; $"btn"=$btn}
+    return @{"dot"=$dot; "stat"=$lStat; "btn"=$btn}
 }
 
 $s1 = MkStepRow 1 "Docker Desktop"  0
