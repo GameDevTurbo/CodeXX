@@ -632,30 +632,30 @@ class App(ctk.CTk):
             self.log("No config.yaml found.", "error")
             self._show_wizard(); return
         ensure_dirs()
-        self._run_bg(lambda: run_compose(["up", "-d", "--pull", "never"], self.log),
+        self._run_bg(lambda: run_compose(["up", "-d", "--pull", "never"], self._safe_log),
                      done=lambda: (self._refresh(), open_browser(MGMT_URL)))
 
     def _start_service(self):
         if not docker_running():
             self.log("Docker not running.", "error"); return
         ensure_dirs()
-        self._run_bg(lambda: run_compose(["up", "-d", "--pull", "never"], self.log),
+        self._run_bg(lambda: run_compose(["up", "-d", "--pull", "never"], self._safe_log),
                      done=self._refresh)
 
     def _stop_service(self):
-        self._run_bg(lambda: run_compose(["down"], self.log), done=self._refresh)
+        self._run_bg(lambda: run_compose(["down"], self._safe_log), done=self._refresh)
 
     def _restart_service(self):
         if not docker_running():
             self.log("Docker not running.", "error"); return
-        self._run_bg(lambda: run_compose(["restart"], self.log), done=self._refresh)
+        self._run_bg(lambda: run_compose(["restart"], self._safe_log), done=self._refresh)
 
     def _update_image(self):
         if not docker_running():
             self.log("Docker not running.", "error"); return
         def do():
-            run_compose(["pull"], self.log)
-            run_compose(["up", "-d", "--pull", "never"], self.log)
+            run_compose(["pull"], self._safe_log)
+            run_compose(["up", "-d", "--pull", "never"], self._safe_log)
         self._run_bg(do, done=lambda: (self._refresh(), self.log("Update complete!", "ok")))
 
     def _live_logs(self):
@@ -743,8 +743,8 @@ class App(ctk.CTk):
         self._refresh()
 
         def do():
-            run_compose(["pull"], self.log)
-            run_compose(["up", "-d", "--pull", "never"], self.log)
+            run_compose(["pull"], self._safe_log)
+            run_compose(["up", "-d", "--pull", "never"], self._safe_log)
         self._run_bg(do, done=lambda: (
             self._refresh(),
             self.log("All done! Opening management panel...", "ok"),
@@ -753,10 +753,17 @@ class App(ctk.CTk):
 
     # ── Background task helper ─────────────────────────────────────────────────
 
+    def _safe_log(self, msg: str, kind: str = "normal"):
+        """Thread-safe log: schedule on main thread via after()."""
+        self.after(0, lambda m=msg, k=kind: self.log(m, k))
+
     def _run_bg(self, fn, done=None):
+        """Run fn in background thread; schedule done() on main thread when finished."""
         def worker():
             try:
                 fn()
+            except Exception as e:
+                self.after(0, lambda: self.log(f"Error: {e}", "error"))
             finally:
                 if done:
                     self.after(0, done)
