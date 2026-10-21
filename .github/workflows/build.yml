@@ -1,4 +1,4 @@
-name: Build Launcher Executables
+name: Build Executables
 
 on:
   push:
@@ -13,16 +13,10 @@ jobs:
         include:
           - os: windows-latest
             name: Windows
-            artifact: CLIProxyAPI-Manager-Windows.exe
-            pyinstaller_args: --onefile --windowed --name CLIProxyAPI-Manager
           - os: macos-latest
             name: macOS
-            artifact: CLIProxyAPI-Manager-macOS
-            pyinstaller_args: --onefile --windowed --name CLIProxyAPI-Manager
           - os: ubuntu-latest
             name: Linux
-            artifact: CLIProxyAPI-Manager-Linux
-            pyinstaller_args: --onefile --name CLIProxyAPI-Manager
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.name }})
@@ -41,22 +35,35 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y python3-tk
 
-      - name: Build executable
-        run: pyinstaller ${{ matrix.pyinstaller_args }} launcher.py
+      - name: Build Server tool
+        run: pyinstaller --onefile --windowed --name CLIProxyAPI-Server launcher.py
 
-      - name: Rename artifact (Windows)
+      - name: Build Client tool
+        run: pyinstaller --onefile --windowed --name CLIProxyAPI-Client client.py
+
+      - name: Collect artifacts (Windows)
         if: matrix.os == 'windows-latest'
-        run: mv dist/CLIProxyAPI-Manager.exe dist/${{ matrix.artifact }}
+        run: |
+          mv dist/CLIProxyAPI-Server.exe dist/CLIProxyAPI-Server-Windows.exe
+          mv dist/CLIProxyAPI-Client.exe dist/CLIProxyAPI-Client-Windows.exe
 
-      - name: Rename artifact (macOS/Linux)
-        if: matrix.os != 'windows-latest'
-        run: mv dist/CLIProxyAPI-Manager dist/${{ matrix.artifact }}
+      - name: Collect artifacts (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mv dist/CLIProxyAPI-Server dist/CLIProxyAPI-Server-macOS
+          mv dist/CLIProxyAPI-Client dist/CLIProxyAPI-Client-macOS
 
-      - name: Upload artifact
+      - name: Collect artifacts (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mv dist/CLIProxyAPI-Server dist/CLIProxyAPI-Server-Linux
+          mv dist/CLIProxyAPI-Client dist/CLIProxyAPI-Client-Linux
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          name: binaries-${{ matrix.name }}
+          path: dist/CLIProxyAPI-*
 
   release:
     needs: build
@@ -71,20 +78,18 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           body: |
-            ## CLIProxyAPI Manager ${{ github.ref_name }}
+            ## CLIProxyAPI ${{ github.ref_name }}
 
-            Download the launcher for your platform — no Python required.
+            下载对应平台的可执行文件，无需安装 Python。
 
-            | Platform | File |
-            |----------|------|
-            | Windows  | `CLIProxyAPI-Manager-Windows.exe` — double-click to run |
-            | macOS    | `CLIProxyAPI-Manager-macOS` — `chmod +x` then double-click |
-            | Linux    | `CLIProxyAPI-Manager-Linux` — `chmod +x` then run |
+            | 工具 | Windows | macOS | Linux |
+            |------|---------|-------|-------|
+            | **Server**（部署服务） | `CLIProxyAPI-Server-Windows.exe` | `CLIProxyAPI-Server-macOS` | `CLIProxyAPI-Server-Linux` |
+            | **Client**（连接使用） | `CLIProxyAPI-Client-Windows.exe` | `CLIProxyAPI-Client-macOS` | `CLIProxyAPI-Client-Linux` |
 
-            **First time?** See [README](https://github.com/${{ github.repository }}#readme) for setup instructions.
-          files: dist/*
+            macOS/Linux 下载后需 `chmod +x` 再运行。
+          files: dist/CLIProxyAPI-*

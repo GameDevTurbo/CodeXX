@@ -1,85 +1,26 @@
-# CLIProxyAPI
+﻿# CLIProxyAPI
 
-将 ChatGPT Plus / Claude Pro 等 AI 订阅转为标准 OpenAI API，供多设备共享。
+\u5c06 ChatGPT Plus / Claude Pro \u7b49 AI \u8ba2\u9605\u8f6c\u4e3a\u6807\u51c6 OpenAI API\uff0c\u4f9b\u591a\u8bbe\u5907\u5171\u4eab\u3002
 
-> ⚠️ 违反各平台服务条款，存在封号风险，仅供个人学习研究。
+> \u26a0\ufe0f \u8fdd\u53cd\u5404\u5e73\u53f0\u670d\u52a1\u6761\u6b3e\uff0c\u5b58\u5728\u5c01\u53f7\u98ce\u9669\uff0c\u4ec5\u4f9b\u4e2a\u4eba\u5b66\u4e60\u7814\u7a76\u3002
 
-## 快速开始
+---
 
-| 平台 | 操作 |
+## \u5de5\u5177
+
+| \u6587\u4ef6 | \u7528\u9014 | Windows \u53cc\u51fb | macOS \u53cc\u51fb |
+|------|------|---------|---------|
+| launcher.py | **Server** \u2014 \u90e8\u7f72\u548c\u7ba1\u7406\u670d\u52a1 | Server.bat | Server.command |
+| client.py | **Client** \u2014 \u8fde\u63a5\u548c\u914d\u7f6e\u4f7f\u7528 | Client.bat | Client.command |
+
+> \u65e0 Python \u73af\u5883\uff1f\u4ece [Releases](https://github.com/GameDevTurbo/CodeXX/releases) \u4e0b\u8f7d\u5df2\u7f16\u8bd1\u7684\u53ef\u6267\u884c\u6587\u4ef6\u3002
+
+---
+
+## \u5404\u5e73\u53f0\u6307\u5357
+
+| \u5e73\u53f0 | \u6587\u6863 |
 |------|------|
-| Windows | 双击 `start.bat` |
-| macOS | `bash start.sh` |
-| Linux 云服务器 | `bash scripts/deploy.sh --expose` |
-
-详细说明见各平台指南：
-- [🖥 Windows](docs/windows.md)
-- [🍎 macOS](docs/macos.md)
-- [🖧 Linux 云服务器](docs/linux.md)
-
-## 工具说明
-
-| 工具 | 用途 |
-|------|------|
-| `launcher.py` | 部署端 GUI：服务管理 + 连接信息导出 |
-| `client.py` | 使用端 GUI：导入配置 + 工具检测 + Tailscale 管理 |
-| `prepare_offline.bat` | 提前下载依赖包，用于无网环境部署 |
-| `start.bat` | Windows 双击启动器 |
-| `start.sh` | macOS/Linux 启动器 |
-
-> 上游项目: https://github.com/router-for-me/CLIProxyAPI
-
----
-
-## Windows 部署（一项式）
-
-**前缀**：安装并启动 [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-
-1. 克隆本仓库
-
-```bash
-git clone https://github.com/GameDevTurbo/CodeXX.git
-cd CodeXX
-```
-
-2. 双击 **`start.bat`**
-3. 点击 **Setup and Deploy** — 自动生成密鑰、写入配置、拉取镜像、启动服务
-
-> **重要**：如果容器连不上 ChatGPT/Claude，按照 [Windows 部署指南](docs/deploy-windows.md) 配置 Docker Desktop 代理。
-
----
-
-## Linux / macOS 部署
-
-```bash
-git clone https://github.com/GameDevTurbo/CodeXX.git && cd CodeXX
-bash scripts/deploy.sh --expose   # 美国服务器无需代理
-```
-
----
-
-## 快速查询
-
-| 项目 | 地址 |
-|------|------|
-| API | `http://你的IP:8317/v1` |
-| 管理面板 | `http://你的IP:8317/management.html` |
-| Tailscale IP | `tailscale ip -4` |
-
----
-
-## 风险声明
-
-本项目通过 OAuth 通道使用订阅产品，**违反各平台服务条款**，存在封号风险。仅供个人学习研究。
-
----
-
-## 文档
-
-| 文档 | 内容 |
-|------|------|
-| [Windows 部署](docs/deploy-windows.md) | Docker Desktop + 代理配置 |
-| [Linux 部署](docs/deploy-linux-server.md) | 云服务器部署 |
-| [macOS 部署](docs/deploy-mac.md) | Mac 本地部署 |
-| [使用指南](docs/usage-guide.md) | cc-switch、Tailscale共享 |
-| [客户端接入](docs/client-setup.md) | 其他设备如何连接 |
+| Windows | [docs/windows.md](docs/windows.md) |
+| macOS | [docs/macos.md](docs/macos.md) |
+| Linux \u4e91\u670d\u52a1\u5668 | [docs/linux.md](docs/linux.md) |

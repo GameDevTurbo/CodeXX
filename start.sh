@@ -1,7 +1,9 @@
 #!/bin/bash
 # CLIProxyAPI Launcher — macOS / Linux
+# Usage: bash start.sh [launcher.py|client.py]
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT="${1:-launcher.py}"
 
 find_python() {
     for cmd in python3 python python3.12 python3.11 python3.10; do
@@ -74,5 +76,5 @@ echo "Using: $($PY --version 2>&1)"
 "$PY" -m pip install customtkinter -q 2>/dev/null || true
 
 # Launch (detached from terminal)
-"$PY" "$DIR/launcher.py" &
+"$PY" "$DIR/$SCRIPT" &
 disown

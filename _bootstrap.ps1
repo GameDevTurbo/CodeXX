@@ -1,6 +1,9 @@
 # CLIProxyAPI Bootstrap — Find Python and launch the GUI
-# Called by start.bat: _bootstrap.ps1 <launcher_dir>
-param([string]$Dir = $PSScriptRoot)
+# Usage: _bootstrap.ps1 <launcher_dir> [launcher.py|client.py]
+param(
+    [string]$Dir    = $PSScriptRoot,
+    [string]$Script = "launcher.py"
+)
 
 $Dir = $Dir.TrimEnd('\','/')
 
@@ -91,7 +94,7 @@ if ($py) {
     Write-Host "Found Python: $py"
     Install-CustomTkinter $py
     $pyw    = Get-PythonW $py
-    $script = Join-Path $Dir "launcher.py"
+    $script = Join-Path $Dir $Script
     Write-Host "Launching: $pyw `"$script`""
     # py.exe needs -3 flag or just works directly with .py files
     if ([IO.Path]::GetFileNameWithoutExtension($pyw) -in @("py","pyw")) {

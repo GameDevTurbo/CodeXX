@@ -55,8 +55,6 @@ tailscale ip -4
 
 ## 相关文档
 
-- [Windows 部署](docs/deploy-windows.md)
-- [Linux 部署](docs/deploy-linux-server.md)
-- [macOS 部署](docs/deploy-mac.md)
-- [使用指南](docs/usage-guide.md)
-- [客户端接入](docs/client-setup.md)
+- [Windows](docs/windows.md)
+- [Linux 云服务器](docs/linux.md)
+- [macOS](docs/macos.md)
