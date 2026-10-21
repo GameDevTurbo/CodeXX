@@ -109,21 +109,28 @@ def get_tailscale_ip() -> str:
         return ""
 
 def find_tailscale() -> str:
-    """Return path to tailscale executable, or empty string if not found."""
-    # Check PATH first
+    """Return path to tailscale CLI, or empty string if not found."""
     found = shutil.which("tailscale")
     if found:
         return found
-    # Windows common install paths
     for p in [
         r"C:\Program Files\Tailscale\tailscale.exe",
         r"C:\Program Files (x86)\Tailscale\tailscale.exe",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+        "/usr/local/bin/tailscale",
+        "/opt/homebrew/bin/tailscale",
     ]:
         if Path(p).exists():
             return p
-    # macOS
-    for p in ["/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-              "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale"]:
+    return ""
+
+def find_tailscale_gui() -> str:
+    """Return path to Tailscale GUI app (Windows/macOS)."""
+    for p in [
+        r"C:\Program Files\Tailscale\Tailscale.exe",
+        r"C:\Program Files (x86)\Tailscale\Tailscale.exe",
+        "/Applications/Tailscale.app",
+    ]:
         if Path(p).exists():
             return p
     return ""
@@ -525,32 +532,61 @@ class App(ctk.CTk):
         self.log("Opening tailscale.com/download in browser...", "warn")
 
     def _tailscale_login(self):
+        # On Windows: launch Tailscale GUI app (handles login via system tray)
+        # On macOS/Linux: run 'tailscale login' to get a URL
+        gui = find_tailscale_gui()
+        if OS == "Windows" and gui:
+            self.log("Opening Tailscale app — click the tray icon to log in.", "warn")
+            if gui.endswith(".app"):
+                subprocess.Popen(["open", gui])
+            else:
+                subprocess.Popen([gui])
+            self.after(4000, self._refresh)
+            return
+        # Non-Windows or no GUI app: use CLI
         exe = find_tailscale()
         if not exe:
             self.log("Tailscale not found. Please install it first.", "error")
             open_browser("https://tailscale.com/download")
             return
-        self.log("Running 'tailscale up' — browser will open for login...", "warn")
-        if OS == "Windows":
-            subprocess.Popen(["powershell", "-Command",
-                              f"& '{exe}' up; Read-Host 'Press Enter to close'"],
-                             creationflags=subprocess.CREATE_NEW_CONSOLE)
-        else:
-            subprocess.Popen([exe, "up"])
+        self.log("Running 'tailscale login' — browser will open...", "warn")
+        self._run_bg(lambda: self._do_tailscale_login(exe))
+
+    def _do_tailscale_login(self, exe):
+        import re
+        try:
+            proc = subprocess.Popen(
+                [exe, "login"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, **ENC)
+            url = ""
+            for line in proc.stdout:
+                line = line.strip()
+                if line:
+                    self.after(0, lambda l=line: self.log(l, "dim"))
+                match = re.search(r'https://\S+', line)
+                if match and not url:
+                    url = match.group(0)
+                    self.after(0, lambda u=url: (
+                        self.log(f"Opening: {u}", "ok"),
+                        open_browser(u)
+                    ))
+            proc.wait()
+        except Exception as e:
+            self.after(0, lambda: self.log(f"Error: {e}", "error"))
         self.after(5000, self._refresh)
 
     def _tailscale_start(self):
+        ts = tailscale_status()
+        if ts["state"] in ("needs_login", "stopped"):
+            self._tailscale_login()
+            return
         exe = find_tailscale()
-        if not exe:
-            self.log("Tailscale not found.", "error"); return
-        self.log("Starting Tailscale...", "warn")
-        if OS == "Windows":
-            subprocess.Popen(["powershell", "-Command",
-                              f"& '{exe}' up; Read-Host 'Press Enter to close'"],
-                             creationflags=subprocess.CREATE_NEW_CONSOLE)
-        else:
-            subprocess.Popen([exe, "up"])
-        self.after(5000, self._refresh)
+        if exe:
+            self.log("Reconnecting Tailscale...", "warn")
+            self._run_bg(lambda: subprocess.run([exe, "up"],
+                                                capture_output=True, **ENC))
+            self.after(4000, self._refresh)
 
     def _start_docker(self):
         self.log("Starting Docker Desktop...", "warn")
