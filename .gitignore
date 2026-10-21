@@ -1,6 +1,7 @@
 ﻿# Sensitive files - DO NOT commit
 config.yaml
 auths/
+.credentials.json
 
 # Logs
 logs/

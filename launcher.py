@@ -27,8 +27,9 @@ CONTAINER = "cli-proxy-api"
 PORT = 8317
 MGMT_URL = f"http://localhost:{PORT}/management.html"
 API_URL  = f"http://localhost:{PORT}/v1"
-CFG_PATH = SCRIPT_DIR / "config.yaml"
-CMP_PATH = SCRIPT_DIR / "docker-compose.yml"
+CFG_PATH   = SCRIPT_DIR / "config.yaml"
+CMP_PATH   = SCRIPT_DIR / "docker-compose.yml"
+CREDS_PATH = SCRIPT_DIR / ".credentials.json"
 
 # ── Docker helpers ─────────────────────────────────────────────────────────────
 
@@ -345,6 +346,19 @@ class App(ctk.CTk):
         keys     = get_api_keys()
         key      = keys[0] if keys else "—"
 
+        # Load saved credentials (password)
+        mgmt_pwd = "—"
+        if CREDS_PATH.exists():
+            try:
+                creds = json.loads(CREDS_PATH.read_text(encoding="utf-8"))
+                mgmt_pwd = creds.get("mgmt_password", "—")
+            except Exception:
+                pass
+
+        # Build mgmt URL with real IP
+        server_ip = ts_ip or local_ip or "localhost"
+        mgmt_url_real = f"http://{server_ip}:{PORT}/management.html"
+
         # Clear and rebuild
         for w in self.conn_frame.winfo_children():
             w.destroy()
@@ -356,17 +370,19 @@ class App(ctk.CTk):
 
         rows = []
         if ts_ip:
-            rows.append(("Tailscale", f"http://{ts_ip}:{PORT}/v1"))
+            rows.append(("Tailscale API", f"http://{ts_ip}:{PORT}/v1"))
         if local_ip:
-            rows.append(("Local LAN", f"http://{local_ip}:{PORT}/v1"))
-        rows.append(("API Key",  key))
+            rows.append(("LAN API",       f"http://{local_ip}:{PORT}/v1"))
+        rows.append(("API Key",           key))
+        rows.append(("Mgmt Panel",        mgmt_url_real))
+        rows.append(("Mgmt Password",     mgmt_pwd))
 
         for i, (label, value) in enumerate(rows, start=1):
             ctk.CTkLabel(self.conn_frame, text=label, text_color=C_DIM,
-                         font=ctk.CTkFont(size=9), width=80, anchor="w"
+                         font=ctk.CTkFont(size=9), width=100, anchor="w"
                          ).grid(row=i, column=0, padx=(14,4), pady=2, sticky="w")
-            ctk.CTkLabel(self.conn_frame,
-                         text=value[:52] + ("…" if len(value) > 52 else ""),
+            display = value[:50] + ("…" if len(value) > 50 else "")
+            ctk.CTkLabel(self.conn_frame, text=display,
                          text_color=C_TEXT, font=ctk.CTkFont(family="Courier", size=9),
                          anchor="w"
                          ).grid(row=i, column=1, padx=4, pady=2, sticky="w")
@@ -378,14 +394,14 @@ class App(ctk.CTk):
                           command=lambda x=v: self._copy(x)
                           ).grid(row=i, column=2, padx=(4,14), pady=2)
 
-        btn_row = i + 1
+        btn_row = len(rows) + 1
         ctk.CTkButton(self.conn_frame, text="Export .cliproxy file",
                       font=ctk.CTkFont(size=9), width=160, height=26,
                       fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
                       border_width=1, border_color=C_DIM,
-                      command=lambda: self._export(ts_ip or local_ip, key)
+                      command=lambda: self._export(server_ip, key)
                       ).grid(row=btn_row, column=0, columnspan=2,
-                             padx=14, pady=(6,10), sticky="w")
+                             padx=14, pady=(8,12), sticky="w")
 
         client_py = SCRIPT_DIR / "client.py"
         if client_py.exists():
@@ -395,7 +411,7 @@ class App(ctk.CTk):
                           command=lambda: subprocess.Popen(
                               [sys.executable, str(client_py)],
                               cwd=str(SCRIPT_DIR))
-                          ).grid(row=btn_row, column=2, padx=14, pady=(6,10))
+                          ).grid(row=btn_row, column=2, padx=14, pady=(8,12))
 
         self.conn_frame.pack(fill="x", padx=20, pady=(0,8),
                              before=self.log_box)
@@ -548,6 +564,11 @@ class App(ctk.CTk):
 
         CFG_PATH.write_text(cfg, encoding="utf-8")
         self.log("config.yaml generated.", "ok")
+
+        # Save credentials for UI display
+        creds = {"api_keys": [k1, k2], "mgmt_password": pw,
+                 "mgmt_url": MGMT_URL, "api_url": API_URL}
+        CREDS_PATH.write_text(json.dumps(creds, indent=2), encoding="utf-8")
 
         if px and px != "0":
             cmp = CMP_PATH.read_text(encoding="utf-8")
