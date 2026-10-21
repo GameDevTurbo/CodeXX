@@ -48,6 +48,100 @@ def find_tailscale() -> str:
             return p
     return ""
 
+
+def _run_silent(cmd: list, log_fn=None) -> int:
+    """Run command silently, log output, return exit code."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=120, **ENC, **_NO_WIN)
+        if log_fn:
+            out = (r.stdout or r.stderr or "").strip()
+            if out:
+                log_fn(out[:200], "ok" if r.returncode == 0 else "warn")
+        return r.returncode
+    except Exception as e:
+        if log_fn:
+            log_fn(f"Error: {e}", "error")
+        return 1
+
+
+def install_tailscale(log_fn) -> bool:
+    """Install Tailscale for the current platform. Returns True on success."""
+    log_fn("Installing Tailscale...", "dim")
+    if OS == "Windows":
+        if shutil.which("winget"):
+            rc = _run_silent(["winget", "install", "tailscale.tailscale", "-e",
+                               "--silent", "--accept-source-agreements",
+                               "--accept-package-agreements"], log_fn)
+            return rc == 0
+        else:
+            # Download installer silently
+            import urllib.request, tempfile
+            url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.exe"
+            log_fn("Downloading Tailscale installer...", "dim")
+            try:
+                tmp = Path(tempfile.gettempdir()) / "tailscale-setup.exe"
+                urllib.request.urlretrieve(url, tmp)
+                rc = _run_silent([str(tmp), "/quiet", "/norestart"], log_fn)
+                return rc == 0
+            except Exception as e:
+                log_fn(f"Download failed: {e}", "error")
+                return False
+    elif OS == "Darwin":
+        if shutil.which("brew"):
+            rc = _run_silent(["brew", "install", "--cask", "tailscale"], log_fn)
+            return rc == 0
+        else:
+            # App Store fallback
+            webbrowser.open("https://apps.apple.com/us/app/tailscale/id1475387142")
+            log_fn("Opening App Store for Tailscale...", "warn")
+            return False
+    else:
+        rc = _run_silent(["bash", "-c",
+                          "curl -fsSL https://tailscale.com/install.sh | sh"], log_fn)
+        return rc == 0
+
+
+def install_node(log_fn) -> bool:
+    """Install Node.js for the current platform."""
+    log_fn("Installing Node.js...", "dim")
+    if OS == "Windows":
+        if shutil.which("winget"):
+            rc = _run_silent(["winget", "install", "OpenJS.NodeJS.LTS", "-e",
+                               "--silent", "--accept-source-agreements",
+                               "--accept-package-agreements"], log_fn)
+            return rc == 0
+        else:
+            import urllib.request, tempfile
+            url = "https://nodejs.org/dist/latest-v22.x/node-v22.11.0-x64.msi"
+            log_fn("Downloading Node.js installer...", "dim")
+            try:
+                tmp = Path(tempfile.gettempdir()) / "node-setup.msi"
+                urllib.request.urlretrieve(url, tmp)
+                rc = _run_silent(["msiexec", "/i", str(tmp), "/quiet", "/norestart"], log_fn)
+                return rc == 0
+            except Exception as e:
+                log_fn(f"Download failed: {e}", "error")
+                return False
+    elif OS == "Darwin":
+        if shutil.which("brew"):
+            rc = _run_silent(["brew", "install", "node"], log_fn)
+            return rc == 0
+        webbrowser.open("https://nodejs.org")
+        return False
+    else:
+        # Linux: use nodesource
+        script = ("curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - "
+                  "&& sudo apt-get install -y nodejs")
+        if shutil.which("apt-get"):
+            rc = _run_silent(["bash", "-c", script], log_fn)
+        elif shutil.which("dnf"):
+            rc = _run_silent(["sudo", "dnf", "install", "-y", "nodejs", "npm"], log_fn)
+        else:
+            rc = _run_silent(["bash", "-c",
+                              "curl -fsSL https://nodejs.org/dist/latest/node-linux-x64.tar.gz"
+                              " | sudo tar -xz -C /usr/local --strip-components=1"], log_fn)
+        return rc == 0
+
 def ts_status() -> dict:
     exe = find_tailscale()
     if not exe:
@@ -498,8 +592,28 @@ class ClientApp(ctk.CTk):
                 ))
 
     def _install_tool(self, url: str, npm_cmd: str | None, winget_id: str | None = None):
+        name = next((k for k, v in self.tool_rows.items()
+                     if v.get("url") == url), "")
         def run():
-            if npm_cmd and shutil.which("npm"):
+            ok = False
+            if name == "Tailscale":
+                ok = install_tailscale(lambda m, k="dim": self.after(0, lambda: self.log(m, k)))
+                if ok:
+                    self.after(0, lambda: (
+                        self.log("Tailscale installed! Starting login...", "ok"),
+                        self._check_tools(),
+                        self._ts_login()
+                    ))
+                    return
+            elif name == "Node / npm":
+                ok = install_node(lambda m, k="dim": self.after(0, lambda: self.log(m, k)))
+                if ok:
+                    self.after(0, lambda: (
+                        self.log("Node.js installed! Restart this tool to use npm.", "ok"),
+                        self._check_tools()
+                    ))
+                    return
+            elif npm_cmd and shutil.which("npm"):
                 self.after(0, lambda: self.log(f"Installing: {npm_cmd}", "dim"))
                 r = subprocess.run(npm_cmd.split(), capture_output=True, **ENC, **_NO_WIN)
                 msg = (r.stdout or r.stderr or "done").strip()[:120]
@@ -508,49 +622,36 @@ class ClientApp(ctk.CTk):
                 if r.returncode == 0:
                     self.after(500, self._check_tools)
                     return
-            if winget_id and OS == "Windows" and shutil.which("winget"):
-                self.after(0, lambda: self.log(f"Installing via winget: {winget_id}", "dim"))
-                r = subprocess.run(
-                    ["winget", "install", winget_id, "-e", "--silent",
-                     "--accept-source-agreements", "--accept-package-agreements"],
-                    capture_output=True, **ENC, **_NO_WIN)
-                self.after(0, lambda: self.log(
-                    "Installed. Restart to detect." if r.returncode == 0
-                    else "winget failed — opening download page",
-                    "ok" if r.returncode == 0 else "warn"))
-                self.after(500, self._check_tools)
-                if r.returncode == 0:
-                    return
+            # Fallback: open browser
             self.after(0, lambda: (self.log(f"Opening: {url}", "dim"), webbrowser.open(url)))
         threading.Thread(target=run, daemon=True).start()
 
     def _setup_all(self):
-        """Install all missing tools in background without blocking UI."""
+        """Install all missing tools in sequence, non-blocking."""
         self.log("=== Setting up all missing tools ===", "warn")
         def run():
             for name, info in self.tool_rows.items():
                 if shutil.which(info["cmd"]):
-                    continue
+                    continue  # already installed
                 self.after(0, lambda n=name: self.log(f"Installing {n}...", "dim"))
-                npm = info.get("npm")
-                wg  = info.get("winget")
-                url = info.get("url", "")
-                if npm and shutil.which("npm"):
-                    r = subprocess.run(npm.split(), capture_output=True, **ENC, **_NO_WIN)
-                    self.after(0, lambda rc=r.returncode, n=name:
-                               self.log(f"{n}: {'OK' if rc == 0 else 'failed'}", "ok" if rc == 0 else "error"))
-                elif wg and OS == "Windows" and shutil.which("winget"):
-                    r = subprocess.run(
-                        ["winget", "install", wg, "-e", "--silent",
-                         "--accept-source-agreements", "--accept-package-agreements"],
-                        capture_output=True, **ENC, **_NO_WIN)
-                    self.after(0, lambda rc=r.returncode, n=name:
-                               self.log(f"{n}: {'OK' if rc == 0 else 'failed'}", "ok" if rc == 0 else "warn"))
+                ok = False
+                if name == "Tailscale":
+                    ok = install_tailscale(
+                        lambda m, k="dim": self.after(0, lambda: self.log(m, k)))
+                elif name == "Node / npm":
+                    ok = install_node(
+                        lambda m, k="dim": self.after(0, lambda: self.log(m, k)))
+                elif info.get("npm") and shutil.which("npm"):
+                    r = subprocess.run(info["npm"].split(),
+                                       capture_output=True, **ENC, **_NO_WIN)
+                    ok = r.returncode == 0
                 else:
-                    self.after(0, lambda u=url, n=name: (
-                        self.log(f"{n}: opening download page", "dim"), webbrowser.open(u)))
+                    # Open download page as last resort
+                    self.after(0, lambda u=info.get("url", ""): webbrowser.open(u))
+                self.after(0, lambda n=name, o=ok: self.log(
+                    f"{n}: {'installed ✓' if o else 'check log above'}", "ok" if o else "warn"))
             self.after(0, lambda: (
-                self.log("=== Done. Rechecking... ===", "ok"),
+                self.log("=== Setup complete. Rechecking... ===", "ok"),
                 self._check_tools()
             ))
         threading.Thread(target=run, daemon=True).start()
