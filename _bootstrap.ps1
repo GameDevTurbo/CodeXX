@@ -46,7 +46,17 @@ function Install-CustomTkinter($pyExe) {
 }
 
 function Get-PythonW($pyExe) {
-    $pyw = Join-Path (Split-Path $pyExe) "pythonw.exe"
+    $dir = Split-Path $pyExe
+    $name = [IO.Path]::GetFileNameWithoutExtension($pyExe)
+    # py.exe (Launcher) → pyw.exe
+    if ($name -eq "py") {
+        $pyw = Join-Path $dir "pyw.exe"
+        if (Test-Path $pyw) { return $pyw }
+        # fallback: ask py launcher to use pythonw
+        return $pyExe  # py.exe itself will do
+    }
+    # python.exe → pythonw.exe
+    $pyw = Join-Path $dir "pythonw.exe"
     if (Test-Path $pyw) { return $pyw }
     return $pyExe
 }
@@ -65,7 +75,13 @@ if ($py) {
     Install-CustomTkinter $py
     $pyw    = Get-PythonW $py
     $script = Join-Path $Dir "launcher.py"
-    Start-Process $pyw -ArgumentList "`"$script`""
+    Write-Host "Launching: $pyw `"$script`""
+    # py.exe needs -3 flag or just works directly with .py files
+    if ([IO.Path]::GetFileNameWithoutExtension($pyw) -in @("py","pyw")) {
+        Start-Process $pyw -ArgumentList "`"$script`""
+    } else {
+        Start-Process $pyw -ArgumentList "`"$script`""
+    }
 } else {
     # Ultimate fallback: PowerShell WinForms launcher
     Write-Host "No Python found. Using PowerShell launcher..."
