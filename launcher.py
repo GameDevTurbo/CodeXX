@@ -125,14 +125,11 @@ def find_tailscale() -> str:
     return ""
 
 def find_tailscale_gui() -> str:
-    """Return path to Tailscale GUI app (Windows/macOS)."""
-    for p in [
-        r"C:\Program Files\Tailscale\Tailscale.exe",
-        r"C:\Program Files (x86)\Tailscale\Tailscale.exe",
-        "/Applications/Tailscale.app",
-    ]:
-        if Path(p).exists():
-            return p
+    """On Windows/macOS, return GUI app path. Returns empty on Windows
+    since Tailscale.exe == tailscale.exe (same binary, case-insensitive)."""
+    if OS == "Darwin":
+        if Path("/Applications/Tailscale.app").exists():
+            return "/Applications/Tailscale.app"
     return ""
 
 def tailscale_status() -> dict:
@@ -532,25 +529,38 @@ class App(ctk.CTk):
         self.log("Opening tailscale.com/download in browser...", "warn")
 
     def _tailscale_login(self):
-        # On Windows: launch Tailscale GUI app (handles login via system tray)
-        # On macOS/Linux: run 'tailscale login' to get a URL
-        gui = find_tailscale_gui()
-        if OS == "Windows" and gui:
-            self.log("Opening Tailscale app — click the tray icon to log in.", "warn")
-            if gui.endswith(".app"):
-                subprocess.Popen(["open", gui])
-            else:
-                subprocess.Popen([gui])
-            self.after(4000, self._refresh)
-            return
-        # Non-Windows or no GUI app: use CLI
         exe = find_tailscale()
         if not exe:
-            self.log("Tailscale not found. Please install it first.", "error")
+            self.log("Tailscale not found. Please install it.", "error")
             open_browser("https://tailscale.com/download")
             return
-        self.log("Running 'tailscale login' — browser will open...", "warn")
-        self._run_bg(lambda: self._do_tailscale_login(exe))
+
+        # macOS: open the .app bundle
+        gui = find_tailscale_gui()
+        if gui:
+            self.log("Opening Tailscale app...", "warn")
+            subprocess.Popen(["open", gui])
+            self.after(4000, self._refresh)
+            return
+
+        # Windows / Linux: run 'tailscale up' in a visible terminal
+        self.log("Running 'tailscale up' — check the terminal/browser for login URL...", "warn")
+        if OS == "Windows":
+            subprocess.Popen(
+                ["powershell", "-NoExit", "-Command",
+                 f"Write-Host 'Connecting Tailscale...' -ForegroundColor Cyan; "
+                 f"& '{exe}' up; "
+                 f"Write-Host 'Done. You can close this window.' -ForegroundColor Green"],
+                creationflags=subprocess.CREATE_NEW_CONSOLE)
+        else:
+            for term in ("gnome-terminal", "xterm", "konsole"):
+                if shutil.which(term):
+                    subprocess.Popen([term, "--", "bash", "-c",
+                                      f"{exe} up; read -p 'Press Enter to close'"])
+                    break
+            else:
+                subprocess.Popen([exe, "up"])
+        self.after(6000, self._refresh)
 
     def _do_tailscale_login(self, exe):
         import re
