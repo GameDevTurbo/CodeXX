@@ -463,9 +463,11 @@ class ClientApp(ctk.CTk):
         if not ts["installed"]:
             self.ts_dot.configure(text_color=C_DIM)
             self.ts_stat.configure(
-                text="Not installed — needed for remote access", text_color=C_DIM)
-            self.btn_ts_connect.configure(text="Download", fg_color=C_DIM,
-                                           command=lambda: webbrowser.open("https://tailscale.com/download"))
+                text="Not installed — click Install to auto-install", text_color=C_DIM)
+            self.btn_ts_connect.configure(
+                text="Install", fg_color=C_ORANGE,
+                command=lambda: self._install_tool(
+                    "https://tailscale.com/download", None, "tailscale"))
             self.btn_ts_connect.pack(side="left", padx=(0,6))
 
         elif ts["connected"]:
@@ -522,26 +524,29 @@ class ClientApp(ctk.CTk):
     def _ts_login(self):
         exe = find_tailscale()
         if not exe:
-            self.log("Tailscale not installed. Download from tailscale.com/download", "error")
-            webbrowser.open("https://tailscale.com/download")
+            self.log("Tailscale not installed — click [Install] to auto-install.", "error")
             return
 
-        self.log("Opening Tailscale login page in browser...", "warn")
-        self.log("Complete the login in the browser, then wait for status to update.", "dim")
+        self.log("Connecting Tailscale — browser will open automatically for login...", "warn")
 
-        # Open browser immediately — most reliable cross-platform
-        webbrowser.open("https://login.tailscale.com/")
-
-        # Run 'tailscale up' in background (may also trigger OS browser auth)
         def run():
             try:
-                subprocess.run([exe, "up"], capture_output=True,
-                               timeout=90, **ENC, **_NO_WIN)
-            except Exception:
-                pass
+                # Run WITHOUT _NO_WIN so Tailscale can open the browser via Windows API
+                # Capture output to show login URL in log if available
+                proc = subprocess.Popen(
+                    [exe, "up"],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    **ENC)
+                for line in proc.stdout:
+                    line = line.strip()
+                    if line:
+                        self.after(0, lambda l=line: self.log(l, "dim"))
+                proc.wait(timeout=90)
+            except Exception as e:
+                self.after(0, lambda: self.log(f"tailscale up: {e}", "warn"))
         threading.Thread(target=run, daemon=True).start()
 
-        # Poll status until connected (max 60s)
+        # Poll status every 3s up to 60s
         self.after(3000, lambda: self._ts_poll_until_connected(0))
 
     def _ts_poll_until_connected(self, attempt: int):
