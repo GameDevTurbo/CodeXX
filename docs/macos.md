@@ -4,7 +4,9 @@
 
 App 尚无 Apple 开发者签名、公证。遇到系统或组织的安装限制，使用获准的软件安装流程；不会自动关闭安全策略。Tailscale 网络扩展许可及账号登录由用户确认。
 
-源码可运行 bash Server.command，需含 tkinter 的 Python 3.10+。依赖在项目 .venv 中，不向 Homebrew 的全局 Python 强行安装。
+源码可运行 bash Server.command，需含 Python 3.10+；打开 GUI 还需要 tkinter/customtkinter。依赖在项目 .venv 中，不向 Homebrew 的全局 Python 强行安装。
+
+无桌面或只做只读检查时，可直接运行 `python3 launcher.py --doctor --report doctor.json`，不需要 Tk 显示会话；`--init` 和 `--harden-runtime` 同样只操作指定数据目录，不会自动启动或重启容器。路径包含空格时请给 `--data-dir` 和报告路径加引号。
 
 新发布版数据默认 ~/Library/Application Support/CodeXX/Server，不写 App 内部；旧根目录 config.yaml 保持兼容。使用路径带空格的数据目录时务必加引号。
 
