@@ -481,12 +481,12 @@ class ClientApp(ctk.CTk):
         self.tool_labels = {}
         for name, cmd in [("All at once", self._cfg_all), ("Claude Code", self._cfg_claude),
                            ("cc-switch", self._cfg_ccswitch), ("Env Vars", self._cfg_env)]:
-            ctk.CTkButton(cfg, text=name, width=88, height=22,
+            btn = ctk.CTkButton(cfg, text=name, width=88, height=22,
                           fg_color=C_CARD, border_width=1, border_color=C_DIM,
                           text_color=C_TEXT, font=ctk.CTkFont(size=8),
-                          hover_color="#22222e", command=cmd
-                          ).pack(side="left", padx=(0, 3), pady=4)
-            self.tool_labels[name] = None
+                          hover_color="#22222e", command=cmd)
+            btn.pack(side="left", padx=(0, 3), pady=4)
+            self.tool_labels[name] = btn
 
         # ── RIGHT COLUMN ───────────────────────────────────────────────────────
         right = ctk.CTkFrame(mid, fg_color="transparent")
@@ -1050,7 +1050,7 @@ class ClientApp(ctk.CTk):
             self.key_entry.insert(0, data.get("api_key", ""))
             self.log(f"Imported from {Path(path).name}", C_GREEN)
         except Exception as e:
-            self.log(f"Import failed: {e}", C_RED)
+            self.log(f"Import failed: {e}", "error")
 
     def _test(self):
         url, key = self._get_inputs()
@@ -1070,57 +1070,66 @@ class ClientApp(ctk.CTk):
                     pass
                 self.after(0, lambda: (
                     self.test_lbl.configure(text=f"✓ {msg[:60]}", text_color=C_GREEN),
-                    self.log(f"Connection OK — {msg}", C_GREEN),
+                    self.log(f"Connection OK — {msg}", "ok"),
                     self._update_srv_status("online",
                         int(msg.split()[0]) if msg and msg[0].isdigit() else 0)
                 ))
             else:
                 self.after(0, lambda: (
                     self.test_lbl.configure(text="✗ Failed", text_color=C_RED),
-                    self.log(f"Connection failed: {msg}", C_RED),
+                    self.log(f"Connection failed: {msg}", "error"),
                     self._update_srv_status("offline")
                 ))
         threading.Thread(target=run, daemon=True).start()
 
+    def _cfg_btn_done(self, name: str, text: str, color: str):
+        """Update configure button text/color to show result."""
+        btn = self.tool_labels.get(name)
+        if btn:
+            try:
+                btn.configure(text=text, text_color=color)
+            except Exception:
+                pass
+
     def _cfg_claude(self):
         url, key = self._get_inputs()
         if not url or not key:
-            self.log("Enter URL and Key first.", C_RED); return
+            self.log("Enter URL and Key first.", "error"); return
         try:
             path = configure_claude_code(url, key)
-            self.log(f"Claude Code configured → {path}", C_GREEN)
-            self.tool_labels["Claude Code"].configure(text="✓ Configured", text_color=C_GREEN)
+            self.log(f"Claude Code configured → {path}", "ok")
+            self._cfg_btn_done("Claude Code", "✓ Configured", C_GREEN)
         except Exception as e:
-            self.log(f"Error: {e}", C_RED)
+            self.log(f"Error: {e}", "error")
 
     def _cfg_ccswitch(self):
         url, key = self._get_inputs()
         if not url or not key:
-            self.log("Enter URL and Key first.", C_RED); return
+            self.log("Enter URL and Key first.", "error"); return
         try:
             path = configure_ccswitch(url, key)
-            self.log(f"cc-switch provider 'cliproxy' added → {path}", C_GREEN)
-            self.log("In cc-switch: select 'cliproxy', set Protocol = OpenAI Responses", C_DIM)
-            self.tool_labels["cc-switch"].configure(text="✓ Configured", text_color=C_GREEN)
+            self.log(f"cc-switch provider 'cliproxy' added → {path}", "ok")
+            self.log("In cc-switch: select 'cliproxy', set Protocol = OpenAI Responses", "dim")
+            self._cfg_btn_done("cc-switch", "✓ Configured", C_GREEN)
         except Exception as e:
-            self.log(f"Error: {e}", C_RED)
+            self.log(f"Error: {e}", "error")
 
     def _cfg_env(self):
         url, key = self._get_inputs()
         if not url or not key:
-            self.log("Enter URL and Key first.", C_RED); return
+            self.log("Enter URL and Key first.", "error"); return
         try:
             msg = set_env_vars(url, key)
-            self.log(f"Env vars set — {msg}", C_GREEN)
-            self.tool_labels["Env Vars"].configure(text="✓ Configured", text_color=C_GREEN)
+            self.log(f"Env vars set — {msg}", "ok")
+            self._cfg_btn_done("Env Vars", "✓ Configured", C_GREEN)
         except Exception as e:
-            self.log(f"Error: {e}", C_RED)
+            self.log(f"Error: {e}", "error")
 
     def _cfg_all(self):
         self._cfg_claude()
         self._cfg_ccswitch()
         self._cfg_env()
-        self.tool_labels["All at once"].configure(text="✓ All configured!", text_color=C_GREEN)
+        self._cfg_btn_done("All at once", "✓ All configured!", C_GREEN)
 
 
 if __name__ == "__main__":
