@@ -43,3 +43,9 @@
 3. 将临时验证沉淀为团队认可的回归方案，补充跨平台 CI 行为验收。
 4. 设计受授权的 Server 账号/额度观测接口；不要通过客户端入口猜测上游身份。
 5. 两仓库的启动器/打包器当前保持相同实现，后续可提取公共维护组件；暂不增加包发布依赖以免破坏离线使用。
+
+## 提交记录
+
+- Server 优化：`ec8f8c6`（Refactor server packaging and persistent runtime）
+- Client 优化：`01d40d3`（Refactor client packaging and runtime）
+- 两个仓库均已提交到本地 `main`，尚未推送远程。
