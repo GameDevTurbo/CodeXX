@@ -260,8 +260,9 @@ class ClientApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("CLIProxyAPI Client")
-        self.geometry("580x980")
-        self.resizable(False, False)
+        self.geometry("1080x640")
+        self.minsize(860, 560)
+        self.resizable(True, True)
         self.configure(fg_color=C_BG)
         self._ts_connected = False
         self._saved_url = ""
@@ -337,125 +338,123 @@ class ClientApp(ctk.CTk):
         self._refresh_readiness()
 
     def _build_ui(self):
-        # ── Header ───────────────────────────────────────────────────────────
-        ctk.CTkLabel(self, text="CLIProxyAPI Client",
-                     font=ctk.CTkFont(size=20, weight="bold"),
-                     text_color=C_BLUE).pack(anchor="w", padx=20, pady=(16, 0))
-        ctk.CTkLabel(self, text="Follow the steps below to connect and configure.",
-                     font=ctk.CTkFont(size=11), text_color=C_DIM
-                     ).pack(anchor="w", padx=20, pady=(0, 8))
+        # ── Top bar: header + live status ─────────────────────────────────────
+        top_bar = ctk.CTkFrame(self, fg_color="#0d1a0d", corner_radius=0, height=46)
+        top_bar.pack(fill="x")
+        top_bar.pack_propagate(False)
 
-        # ── Status Dashboard ──────────────────────────────────────────────────
-        dash = ctk.CTkFrame(self, fg_color="#0d1a0d", corner_radius=8)
-        dash.pack(fill="x", padx=20, pady=(0, 8))
+        ctk.CTkLabel(top_bar, text="CLIProxyAPI Client",
+                     font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=C_BLUE).pack(side="left", padx=(14, 16), pady=10)
 
-        ctk.CTkLabel(dash, text="Live Status",
-                     font=ctk.CTkFont(size=10, weight="bold"),
-                     text_color=C_GREEN).pack(anchor="w", padx=14, pady=(10,4))
-
-        def status_row(parent, label):
-            row = ctk.CTkFrame(parent, fg_color="transparent")
-            row.pack(fill="x", padx=14, pady=2)
-            dot  = ctk.CTkLabel(row, text="●", font=ctk.CTkFont(size=12),
-                                 text_color=C_DIM, width=18)
+        def dash_item(parent, label):
+            f = ctk.CTkFrame(parent, fg_color="transparent")
+            f.pack(side="left", padx=(0, 12))
+            dot  = ctk.CTkLabel(f, text="●", font=ctk.CTkFont(size=11),
+                                 text_color=C_DIM, width=13)
             dot.pack(side="left")
-            ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=9),
-                         text_color=C_DIM, width=80, anchor="w").pack(side="left", padx=(4,0))
-            stat = ctk.CTkLabel(row, text="Checking...",
-                                 font=ctk.CTkFont(size=9), text_color=C_DIM, anchor="w")
-            stat.pack(side="left", padx=(4,0))
+            ctk.CTkLabel(f, text=label, font=ctk.CTkFont(size=9),
+                         text_color=C_DIM).pack(side="left", padx=(2, 2))
+            stat = ctk.CTkLabel(f, text="…", font=ctk.CTkFont(size=9),
+                                 text_color=C_DIM, anchor="w")
+            stat.pack(side="left")
             return dot, stat
 
-        self.ts_dash_dot, self.ts_dash_stat = status_row(dash, "Tailscale")
-        self.srv_dot, self.srv_stat          = status_row(dash, "Server API")
-
-        # Readiness indicator + quick refresh
-        dash_btm = ctk.CTkFrame(dash, fg_color="transparent")
-        dash_btm.pack(fill="x", padx=14, pady=(6,10))
-        self.ready_lbl = ctk.CTkLabel(dash_btm, text="",
-                                       font=ctk.CTkFont(size=10, weight="bold"),
+        self.ts_dash_dot, self.ts_dash_stat = dash_item(top_bar, "Tailscale:")
+        self.srv_dot,      self.srv_stat     = dash_item(top_bar, "Server:")
+        self.ready_lbl = ctk.CTkLabel(top_bar, text="",
+                                       font=ctk.CTkFont(size=9, weight="bold"),
                                        text_color=C_DIM)
-        self.ready_lbl.pack(side="left")
-        ctk.CTkButton(dash_btm, text="↺ Refresh Now", width=110, height=24,
+        self.ready_lbl.pack(side="left", padx=(4, 6))
+
+        ctk.CTkButton(top_bar, text="↺ Refresh", width=84, height=26,
                       font=ctk.CTkFont(size=9),
                       fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
                       border_width=1, border_color=C_DIM,
                       command=lambda: (self._ts_refresh(), self._auto_check_server())
-                      ).pack(side="right")
+                      ).pack(side="right", padx=(0, 10), pady=10)
 
-        # ── STEP 1: Tailscale ─────────────────────────────────────────────
-        s1 = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
-        s1.pack(fill="x", padx=20, pady=(0, 8))
+        # ── Middle: two-column layout ──────────────────────────────────────────
+        mid = ctk.CTkFrame(self, fg_color="transparent")
+        mid.pack(fill="both", expand=True, padx=6, pady=(6, 0))
+        mid.grid_columnconfigure(0, weight=0, minsize=400)
+        mid.grid_columnconfigure(1, weight=1)
+        mid.grid_rowconfigure(0, weight=1)
+
+        # ── LEFT COLUMN ────────────────────────────────────────────────────────
+        left = ctk.CTkFrame(mid, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+
+        # Step 1: Tailscale
+        s1 = ctk.CTkFrame(left, fg_color=C_CARD, corner_radius=8)
+        s1.pack(fill="x", pady=(0, 5))
 
         s1h = ctk.CTkFrame(s1, fg_color="transparent")
-        s1h.pack(fill="x", padx=14, pady=(10, 4))
+        s1h.pack(fill="x", padx=12, pady=(8, 3))
         ctk.CTkLabel(s1h, text="Step 1 — Tailscale Network",
-                     font=ctk.CTkFont(size=11, weight="bold"),
+                     font=ctk.CTkFont(size=10, weight="bold"),
                      text_color=C_TEXT).pack(side="left")
-        ctk.CTkLabel(s1h, text="Required for remote access",
-                     font=ctk.CTkFont(size=9), text_color=C_DIM).pack(side="right")
+        ctk.CTkLabel(s1h, text="Required", font=ctk.CTkFont(size=8),
+                     text_color=C_DIM).pack(side="right")
 
         ts_row = ctk.CTkFrame(s1, fg_color="transparent")
-        ts_row.pack(fill="x", padx=14, pady=(0, 4))
-        self.ts_dot  = ctk.CTkLabel(ts_row, text="●", font=ctk.CTkFont(size=14),
-                                     text_color=C_DIM, width=18)
+        ts_row.pack(fill="x", padx=12, pady=(0, 2))
+        self.ts_dot  = ctk.CTkLabel(ts_row, text="●", font=ctk.CTkFont(size=13),
+                                     text_color=C_DIM, width=16)
         self.ts_dot.pack(side="left")
         self.ts_stat = ctk.CTkLabel(ts_row, text="Checking...",
-                                     font=ctk.CTkFont(size=10), text_color=C_DIM)
+                                     font=ctk.CTkFont(size=9), text_color=C_DIM)
         self.ts_stat.pack(side="left", padx=(4, 0))
 
         ts_btns = ctk.CTkFrame(s1, fg_color="transparent")
-        ts_btns.pack(fill="x", padx=14, pady=(2, 10))
+        ts_btns.pack(fill="x", padx=12, pady=(2, 8))
         self.btn_ts_connect = ctk.CTkButton(
-            ts_btns, text="Connect", width=110, height=28,
+            ts_btns, text="Connect", width=96, height=26,
             font=ctk.CTkFont(size=9, weight="bold"),
-            fg_color=C_GREEN, hover_color="#2d8a3e",
-            command=self._ts_connect)
-        self.btn_ts_connect.pack(side="left", padx=(0, 6))
+            fg_color=C_GREEN, hover_color="#2d8a3e", command=self._ts_connect)
+        self.btn_ts_connect.pack(side="left", padx=(0, 4))
         self.btn_ts_disconnect = ctk.CTkButton(
-            ts_btns, text="Disconnect (keep LAN)", width=175, height=28,
+            ts_btns, text="Disconnect (keep LAN)", width=166, height=26,
             font=ctk.CTkFont(size=9, weight="bold"),
-            fg_color="#7a2020", hover_color="#601818",
-            command=self._ts_disconnect)
-        self.btn_ts_disconnect.pack(side="left", padx=(0, 6))
-        ctk.CTkButton(ts_btns, text="↺", width=32, height=28,
+            fg_color="#7a2020", hover_color="#601818", command=self._ts_disconnect)
+        self.btn_ts_disconnect.pack(side="left", padx=(0, 4))
+        ctk.CTkButton(ts_btns, text="↺", width=28, height=26,
                       font=ctk.CTkFont(size=11),
                       fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
                       border_width=1, border_color=C_DIM,
                       command=self._ts_refresh).pack(side="left")
 
-        # ── STEP 2: Server Connection ─────────────────────────────────────
-        self.s2_frame = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
-        self.s2_frame.pack(fill="x", padx=20, pady=(0, 8))
+        # Step 2: Server Connection
+        self.s2_frame = ctk.CTkFrame(left, fg_color=C_CARD, corner_radius=8)
+        self.s2_frame.pack(fill="x", pady=(0, 5))
 
         s2h = ctk.CTkFrame(self.s2_frame, fg_color="transparent")
-        s2h.pack(fill="x", padx=14, pady=(10, 4))
+        s2h.pack(fill="x", padx=12, pady=(8, 3))
         ctk.CTkLabel(s2h, text="Step 2 — Server Connection",
-                     font=ctk.CTkFont(size=11, weight="bold"),
+                     font=ctk.CTkFont(size=10, weight="bold"),
                      text_color=C_TEXT).pack(side="left")
         self.s2_hint = ctk.CTkLabel(s2h, text="⚠ Complete Step 1 first",
-                                     font=ctk.CTkFont(size=9), text_color=C_ORANGE)
+                                     font=ctk.CTkFont(size=8), text_color=C_ORANGE)
         self.s2_hint.pack(side="right")
 
-        top = ctk.CTkFrame(self.s2_frame, fg_color="transparent")
-        top.pack(fill="x", padx=14, pady=(0, 6))
-        ctk.CTkButton(top, text="Import .cliproxy file", width=165,
+        imp_row = ctk.CTkFrame(self.s2_frame, fg_color="transparent")
+        imp_row.pack(fill="x", padx=12, pady=(0, 3))
+        ctk.CTkButton(imp_row, text="Import .cliproxy", width=136, height=26,
                       fg_color=C_PANEL, border_width=1, border_color=C_DIM,
-                      text_color=C_DIM, font=ctk.CTkFont(size=10),
-                      hover_color=C_CARD,
-                      command=self._import_file).pack(side="left")
-        ctk.CTkLabel(top, text="or enter manually:",
-                     text_color=C_DIM, font=ctk.CTkFont(size=10)
-                     ).pack(side="left", padx=(10, 0))
+                      text_color=C_DIM, font=ctk.CTkFont(size=9),
+                      hover_color=C_CARD, command=self._import_file).pack(side="left")
+        ctk.CTkLabel(imp_row, text="or enter manually:",
+                     text_color=C_DIM, font=ctk.CTkFont(size=9)
+                     ).pack(side="left", padx=(8, 0))
 
         def entry_row(label, placeholder):
             f = ctk.CTkFrame(self.s2_frame, fg_color="transparent")
-            f.pack(fill="x", padx=14, pady=3)
-            ctk.CTkLabel(f, text=label, width=80, anchor="w",
-                         text_color=C_DIM, font=ctk.CTkFont(size=10)).pack(side="left")
+            f.pack(fill="x", padx=12, pady=2)
+            ctk.CTkLabel(f, text=label, width=56, anchor="w",
+                         text_color=C_DIM, font=ctk.CTkFont(size=9)).pack(side="left")
             e = ctk.CTkEntry(f, placeholder_text=placeholder,
                              fg_color=C_INPUT, border_color=C_DIM,
-                             font=ctk.CTkFont(size=10))
+                             font=ctk.CTkFont(size=9), height=26)
             e.pack(side="left", fill="x", expand=True)
             return e
 
@@ -463,52 +462,48 @@ class ClientApp(ctk.CTk):
         self.key_entry = entry_row("API Key", "sk-...")
 
         test_row = ctk.CTkFrame(self.s2_frame, fg_color="transparent")
-        test_row.pack(fill="x", padx=14, pady=(6, 12))
-        self.btn_test = ctk.CTkButton(test_row, text="Test Connection", width=145,
+        test_row.pack(fill="x", padx=12, pady=(4, 5))
+        self.btn_test = ctk.CTkButton(test_row, text="Test Connection", width=134,
                                        fg_color=C_BLUE, hover_color="#2a6fd4",
-                                       font=ctk.CTkFont(size=10, weight="bold"),
-                                       command=self._test, state="disabled")
+                                       font=ctk.CTkFont(size=9, weight="bold"),
+                                       command=self._test, state="disabled", height=26)
         self.btn_test.pack(side="left")
         self.test_lbl = ctk.CTkLabel(test_row, text="Connect Tailscale to enable",
-                                      font=ctk.CTkFont(size=10), text_color=C_DIM)
-        self.test_lbl.pack(side="left", padx=(10, 0))
+                                      font=ctk.CTkFont(size=9), text_color=C_DIM)
+        self.test_lbl.pack(side="left", padx=(8, 0))
 
-        # Configure local tools (inside step 2)
-        cfg = ctk.CTkFrame(self.s2_frame, fg_color=C_PANEL, corner_radius=6)
-        cfg.pack(fill="x", padx=14, pady=(0, 12))
-        ctk.CTkLabel(cfg, text="Configure",
-                     font=ctk.CTkFont(size=10, weight="bold"),
-                     text_color=C_DIM).pack(anchor="w", padx=12, pady=(8, 4))
-        tools_cfg = [
-            ("Claude Code", self._cfg_claude),
-            ("cc-switch",   self._cfg_ccswitch),
-            ("Env Vars",    self._cfg_env),
-            ("All at once", self._cfg_all),
-        ]
+        # Configure tools row
+        cfg = ctk.CTkFrame(self.s2_frame, fg_color=C_PANEL, corner_radius=5)
+        cfg.pack(fill="x", padx=12, pady=(2, 8))
+        ctk.CTkLabel(cfg, text="Configure:",
+                     font=ctk.CTkFont(size=9, weight="bold"),
+                     text_color=C_DIM).pack(side="left", padx=(10, 4), pady=5)
         self.tool_labels = {}
-        cfg_row = ctk.CTkFrame(cfg, fg_color="transparent")
-        cfg_row.pack(fill="x", padx=12, pady=(0, 8))
-        for name, cmd in tools_cfg:
-            ctk.CTkButton(cfg_row, text=name, width=105, height=26,
+        for name, cmd in [("All at once", self._cfg_all), ("Claude Code", self._cfg_claude),
+                           ("cc-switch", self._cfg_ccswitch), ("Env Vars", self._cfg_env)]:
+            ctk.CTkButton(cfg, text=name, width=88, height=22,
                           fg_color=C_CARD, border_width=1, border_color=C_DIM,
-                          text_color=C_TEXT, font=ctk.CTkFont(size=9),
-                          hover_color="#22222e", command=cmd).pack(side="left", padx=(0, 4))
-            self.tool_labels[name] = None   # not used for status here
+                          text_color=C_TEXT, font=ctk.CTkFont(size=8),
+                          hover_color="#22222e", command=cmd
+                          ).pack(side="left", padx=(0, 3), pady=4)
+            self.tool_labels[name] = None
 
-        # ── STEP 3: Required Tools ───────────────────────────────────────
-        chk = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
-        chk.pack(fill="x", padx=20, pady=(0, 8))
+        # ── RIGHT COLUMN ───────────────────────────────────────────────────────
+        right = ctk.CTkFrame(mid, fg_color="transparent")
+        right.grid(row=0, column=1, sticky="nsew")
+
+        chk = ctk.CTkFrame(right, fg_color=C_CARD, corner_radius=8)
+        chk.pack(fill="both", expand=True)
 
         chk_hdr = ctk.CTkFrame(chk, fg_color="transparent")
-        chk_hdr.pack(fill="x", padx=14, pady=(10, 6))
+        chk_hdr.pack(fill="x", padx=12, pady=(8, 4))
         ctk.CTkLabel(chk_hdr, text="Step 3 — Install Required Tools",
-                     font=ctk.CTkFont(size=11, weight="bold"),
+                     font=ctk.CTkFont(size=10, weight="bold"),
                      text_color=C_TEXT).pack(side="left")
         self.btn_setup_all = ctk.CTkButton(
-            chk_hdr, text="⚡ Setup All", width=110, height=26,
+            chk_hdr, text="⚡ Setup All", width=100, height=24,
             font=ctk.CTkFont(size=9, weight="bold"),
-            fg_color=C_BLUE, hover_color="#2a6fd4",
-            command=self._setup_all)
+            fg_color=C_BLUE, hover_color="#2a6fd4", command=self._setup_all)
         self.btn_setup_all.pack(side="right")
 
         self.tool_rows: dict = {}
@@ -526,17 +521,17 @@ class ClientApp(ctk.CTk):
         ]
         for name, cmd, url, npm_cmd, winget_id in TOOLS:
             row = ctk.CTkFrame(chk, fg_color="transparent")
-            row.pack(fill="x", padx=14, pady=3)
-            dot  = ctk.CTkLabel(row, text="●", font=ctk.CTkFont(size=12),
-                                 text_color=C_DIM, width=16)
+            row.pack(fill="x", padx=12, pady=2)
+            dot  = ctk.CTkLabel(row, text="●", font=ctk.CTkFont(size=11),
+                                 text_color=C_DIM, width=14)
             dot.pack(side="left")
-            lbl  = ctk.CTkLabel(row, text=name, font=ctk.CTkFont(size=10),
-                                 text_color=C_TEXT, width=100, anchor="w")
+            lbl  = ctk.CTkLabel(row, text=name, font=ctk.CTkFont(size=9),
+                                 text_color=C_TEXT, width=88, anchor="w")
             lbl.pack(side="left", padx=(4, 0))
             stat = ctk.CTkLabel(row, text="Checking...", font=ctk.CTkFont(size=9),
-                                 text_color=C_DIM, width=160, anchor="w")
-            stat.pack(side="left", padx=(6, 0))
-            btn  = ctk.CTkButton(row, text="Install", width=80, height=24,
+                                 text_color=C_DIM, anchor="w")
+            stat.pack(side="left", padx=(6, 0), fill="x", expand=True)
+            btn  = ctk.CTkButton(row, text="Install", width=72, height=22,
                                   font=ctk.CTkFont(size=8),
                                   fg_color=C_ORANGE, hover_color="#a06020",
                                   command=lambda u=url, n=npm_cmd, w=winget_id:
@@ -548,25 +543,35 @@ class ClientApp(ctk.CTk):
                                      "npm": npm_cmd, "winget": winget_id}
 
         chk_bot = ctk.CTkFrame(chk, fg_color="transparent")
-        chk_bot.pack(fill="x", padx=14, pady=(4, 12))
+        chk_bot.pack(fill="x", padx=12, pady=(4, 8))
         self.btn_recheck = ctk.CTkButton(
-            chk_bot, text="↺  Recheck", width=90, height=26,
+            chk_bot, text="↺  Recheck", width=86, height=24,
             font=ctk.CTkFont(size=9),
             fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
-            border_width=1, border_color=C_DIM,
-            command=self._recheck_tools)
+            border_width=1, border_color=C_DIM, command=self._recheck_tools)
         self.btn_recheck.pack(side="left")
         self.chk_status_lbl = ctk.CTkLabel(
             chk_bot, text="", font=ctk.CTkFont(size=9), text_color=C_DIM)
-        self.chk_status_lbl.pack(side="left", padx=(10, 0))
+        self.chk_status_lbl.pack(side="left", padx=(8, 0))
 
-        # ── Log ──────────────────────────────────────────────────────────
-        ctk.CTkLabel(self, text="Log", font=ctk.CTkFont(size=10),
-                     text_color=C_DIM).pack(anchor="w", padx=20)
+        # ── Log (bottom full-width) ────────────────────────────────────────────
+        log_hdr = ctk.CTkFrame(self, fg_color="transparent")
+        log_hdr.pack(fill="x", padx=8, pady=(4, 0))
+        ctk.CTkLabel(log_hdr, text="Log", font=ctk.CTkFont(size=9),
+                     text_color=C_DIM).pack(side="left")
+        ctk.CTkButton(log_hdr, text="Clear", width=50, height=20,
+                      font=ctk.CTkFont(size=8),
+                      fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
+                      border_width=1, border_color=C_DIM,
+                      command=lambda: (self.log_box.configure(state="normal"),
+                                       self.log_box.delete("1.0", "end"),
+                                       self.log_box.configure(state="disabled"))
+                      ).pack(side="right")
         self.log_box = ctk.CTkTextbox(
             self, font=ctk.CTkFont(family="Courier", size=9),
-            fg_color="#0a0a0e", text_color=C_TEXT, corner_radius=6, wrap="word")
-        self.log_box.pack(fill="both", expand=True, padx=20, pady=(4, 16))
+            fg_color="#0a0a0e", text_color=C_TEXT, corner_radius=6,
+            wrap="word", height=130)
+        self.log_box.pack(fill="both", expand=True, padx=8, pady=(2, 8))
         self.log_box.configure(state="disabled")
 
     # ── Tailscale ──────────────────────────────────────────────────────────────
