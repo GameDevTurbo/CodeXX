@@ -243,19 +243,82 @@ def set_env_vars(api_url: str, api_key: str) -> str:
 class ClientApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("CLIProxyAPI Client Setup")
-        self.geometry("580x940")
+        self.title("CLIProxyAPI Client")
+        self.geometry("580x980")
         self.resizable(False, False)
         self.configure(fg_color=C_BG)
-        self._ts_connected = False   # gate for Step 2
+        self._ts_connected = False
+        self._saved_url = ""
+        self._saved_key = ""
         self._build_ui()
         self.after(200, self._check_tools)
         self.after(300, self._ts_refresh)
-        self._auto = self.after(10000, self._tick)   # 10s auto-refresh
+        self.after(500, self._auto_check_server)
+        self._auto     = self.after(10000, self._tick)
+        self._srv_auto = self.after(30000, self._server_tick)
 
     def _tick(self):
         self._ts_refresh()
         self._auto = self.after(10000, self._tick)
+
+    def _server_tick(self):
+        self._auto_check_server()
+        self._srv_auto = self.after(30000, self._server_tick)
+
+    def _auto_check_server(self):
+        """Auto-check server connectivity in background."""
+        url = getattr(self, "url_entry", None)
+        key = getattr(self, "key_entry", None)
+        if not url or not key:
+            return
+        u = url.get().strip()
+        k = key.get().strip()
+        if not u or not k:
+            # Try to load from saved .credentials
+            creds_path = Path(__file__).parent / ".last_connection.json"
+            if creds_path.exists():
+                try:
+                    d = json.loads(creds_path.read_text(encoding="utf-8"))
+                    u = d.get("api_url", "")
+                    k = d.get("api_key", "")
+                    if u and k:
+                        self.after(0, lambda: (
+                            url.delete(0, "end"), url.insert(0, u),
+                            key.delete(0, "end"), key.insert(0, k)))
+                except Exception:
+                    pass
+        if not u or not k:
+            self.after(0, lambda: self._update_srv_status("no_config"))
+            return
+
+        def check():
+            try:
+                import urllib.request
+                req = urllib.request.Request(
+                    f"{u.rstrip('/')}/models",
+                    headers={"Authorization": f"Bearer {k}"})
+                with urllib.request.urlopen(req, timeout=6) as r:
+                    data = json.loads(r.read())
+                    count = len(data.get("data", []))
+                    self.after(0, lambda: self._update_srv_status("online", count))
+            except Exception:
+                self.after(0, lambda: self._update_srv_status("offline"))
+        threading.Thread(target=check, daemon=True).start()
+
+    def _update_srv_status(self, state: str, model_count: int = 0):
+        if not hasattr(self, "srv_dot"):
+            return
+        if state == "online":
+            self.srv_dot.configure(text_color=C_GREEN)
+            self.srv_stat.configure(
+                text=f"Online · {model_count} models available", text_color=C_GREEN)
+        elif state == "offline":
+            self.srv_dot.configure(text_color=C_RED)
+            self.srv_stat.configure(text="Unreachable — check Tailscale & server", text_color=C_RED)
+        else:
+            self.srv_dot.configure(text_color=C_DIM)
+            self.srv_stat.configure(text="Enter API address and key below", text_color=C_DIM)
+        self._refresh_readiness()
 
     def _build_ui(self):
         # ── Header ───────────────────────────────────────────────────────────
@@ -264,7 +327,45 @@ class ClientApp(ctk.CTk):
                      text_color=C_BLUE).pack(anchor="w", padx=20, pady=(16, 0))
         ctk.CTkLabel(self, text="Follow the steps below to connect and configure.",
                      font=ctk.CTkFont(size=11), text_color=C_DIM
-                     ).pack(anchor="w", padx=20, pady=(0, 10))
+                     ).pack(anchor="w", padx=20, pady=(0, 8))
+
+        # ── Status Dashboard ──────────────────────────────────────────────────
+        dash = ctk.CTkFrame(self, fg_color="#0d1a0d", corner_radius=8)
+        dash.pack(fill="x", padx=20, pady=(0, 8))
+
+        ctk.CTkLabel(dash, text="Live Status",
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=C_GREEN).pack(anchor="w", padx=14, pady=(10,4))
+
+        def status_row(parent, label):
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", padx=14, pady=2)
+            dot  = ctk.CTkLabel(row, text="●", font=ctk.CTkFont(size=12),
+                                 text_color=C_DIM, width=18)
+            dot.pack(side="left")
+            ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=9),
+                         text_color=C_DIM, width=80, anchor="w").pack(side="left", padx=(4,0))
+            stat = ctk.CTkLabel(row, text="Checking...",
+                                 font=ctk.CTkFont(size=9), text_color=C_DIM, anchor="w")
+            stat.pack(side="left", padx=(4,0))
+            return dot, stat
+
+        self.ts_dash_dot, self.ts_dash_stat = status_row(dash, "Tailscale")
+        self.srv_dot, self.srv_stat          = status_row(dash, "Server API")
+
+        # Readiness indicator + quick refresh
+        dash_btm = ctk.CTkFrame(dash, fg_color="transparent")
+        dash_btm.pack(fill="x", padx=14, pady=(6,10))
+        self.ready_lbl = ctk.CTkLabel(dash_btm, text="",
+                                       font=ctk.CTkFont(size=10, weight="bold"),
+                                       text_color=C_DIM)
+        self.ready_lbl.pack(side="left")
+        ctk.CTkButton(dash_btm, text="↺ Refresh Now", width=110, height=24,
+                      font=ctk.CTkFont(size=9),
+                      fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
+                      border_width=1, border_color=C_DIM,
+                      command=lambda: (self._ts_refresh(), self._auto_check_server())
+                      ).pack(side="right")
 
         # ── STEP 1: Tailscale ─────────────────────────────────────────────
         s1 = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
@@ -461,23 +562,49 @@ class ClientApp(ctk.CTk):
         ts = ts_status()
         self.after(0, lambda: self._ts_apply(ts))
 
+    def _refresh_readiness(self):
+        """Update the dashboard readiness indicator."""
+        if not hasattr(self, "ready_lbl"):
+            return
+        ts_ok  = self._ts_connected
+        srv_ok = hasattr(self, "srv_stat") and "Online" in self.srv_stat.cget("text")
+        if ts_ok and srv_ok:
+            self.ready_lbl.configure(text="✓ Ready — all systems go", text_color=C_GREEN)
+        elif ts_ok:
+            self.ready_lbl.configure(text="Tailscale ✓  Server ✗ — enter config below", text_color=C_ORANGE)
+        else:
+            self.ready_lbl.configure(text="Connect Tailscale first (Step 1)", text_color=C_RED)
+
     def _ts_apply(self, ts: dict):
-        """Update Tailscale UI and gate Step 2."""
+        """Update Tailscale UI, gate Step 2, and sync dashboard."""
         self.btn_ts_connect.pack_forget()
         self.btn_ts_disconnect.pack_forget()
 
         connected = ts.get("connected", False)
         self._ts_connected = connected
 
-        # Gate Step 2: enable Test Connection only when Tailscale is connected
+        # Sync dashboard dot
+        if hasattr(self, "ts_dash_dot"):
+            if connected:
+                self.ts_dash_dot.configure(text_color=C_GREEN)
+                self.ts_dash_stat.configure(
+                    text=f"Connected · {ts.get('ip', '')}", text_color=C_GREEN)
+            elif not ts.get("installed", True):
+                self.ts_dash_dot.configure(text_color=C_DIM)
+                self.ts_dash_stat.configure(text="Not installed", text_color=C_DIM)
+            else:
+                self.ts_dash_dot.configure(text_color=C_RED)
+                self.ts_dash_stat.configure(text="Not connected", text_color=C_RED)
+
+        # Gate Step 2
         if connected:
             self.btn_test.configure(state="normal", fg_color=C_BLUE)
             self.test_lbl.configure(text="", text_color=C_DIM)
             self.s2_hint.configure(text="✓ Tailscale connected", text_color=C_GREEN)
+            self._auto_check_server()
         else:
             self.btn_test.configure(state="disabled", fg_color=C_DIM)
-            self.test_lbl.configure(text="Connect Tailscale to enable",
-                                    text_color=C_DIM)
+            self.test_lbl.configure(text="Connect Tailscale to enable", text_color=C_DIM)
             self.s2_hint.configure(text="⚠ Complete Step 1 first", text_color=C_ORANGE)
 
         if not ts["installed"]:
@@ -771,13 +898,25 @@ class ClientApp(ctk.CTk):
         def run():
             ok, msg = test_connection(url, key)
             if ok:
+                # Save last successful connection for auto-check
+                try:
+                    creds = {"api_url": url, "api_key": key}
+                    (Path(__file__).parent / ".last_connection.json").write_text(
+                        json.dumps(creds), encoding="utf-8")
+                except Exception:
+                    pass
                 self.after(0, lambda: (
                     self.test_lbl.configure(text=f"✓ {msg[:60]}", text_color=C_GREEN),
-                    self.log(f"Connection OK — {msg}", C_GREEN)))
+                    self.log(f"Connection OK — {msg}", C_GREEN),
+                    self._update_srv_status("online",
+                        int(msg.split()[0]) if msg and msg[0].isdigit() else 0)
+                ))
             else:
                 self.after(0, lambda: (
                     self.test_lbl.configure(text="✗ Failed", text_color=C_RED),
-                    self.log(f"Connection failed: {msg}", C_RED)))
+                    self.log(f"Connection failed: {msg}", C_RED),
+                    self._update_srv_status("offline")
+                ))
         threading.Thread(target=run, daemon=True).start()
 
     def _cfg_claude(self):
