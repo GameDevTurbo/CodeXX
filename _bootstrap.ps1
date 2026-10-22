@@ -4,12 +4,12 @@ param(
     [string]$Dir    = $PSScriptRoot,
     [string]$Script = "launcher.py"
 )
-$Dir = $Dir.TrimEnd("\\","/")
+$Dir = $Dir.TrimEnd([char]\'\', [char]\'/\')
 
 function Find-Python {
     # 0. Bundled Python Embeddable (offline_deps\python-embed)
     $embed = Join-Path $Dir "offline_deps\python-embed\python.exe"
-    if (Test-Path $embed) { return $embed }
+    if ((Test-Path $embed) -and (Get-Item $embed).Length -gt 10KB) { return $embed }
 
     # 1. PATH: py launcher, python, python3
     foreach ($cmd in @("py","python","python3")) {
@@ -38,30 +38,41 @@ function Find-Python {
 }
 
 function Setup-EmbedPython {
-    # Download and extract Python Embeddable (~10MB, no install needed)
+    # Detect architecture
+    $arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "win32" }
+    $ver = "3.12.7"
+    $url = "https://www.python.org/ftp/python/$ver/python-$ver-embed-$arch.zip"
     $embedDir = Join-Path $Dir "offline_deps\python-embed"
     $zip = Join-Path $env:TEMP "python-embed.zip"
-    $url = "https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip"
-    Write-Host "Downloading Python Embeddable (~10MB)..."
+    Write-Host "Downloading Python Embeddable (~10MB) for $arch..."
     try {
         (New-Object Net.WebClient).DownloadFile($url, $zip)
+        if ((Get-Item $zip).Length -lt 1MB) { throw "Download incomplete" }
         Expand-Archive $zip -DestinationPath $embedDir -Force
-        # Enable pip by uncommenting import site in the pth file
-        $pth = Get-ChildItem $embedDir -Filter "*._pth" | Select -First 1
+        # Validate extraction
+        $pyExe = Join-Path $embedDir "python.exe"
+        if (-not (Test-Path $pyExe) -or (Get-Item $pyExe).Length -lt 10KB) {
+            throw "python.exe missing or corrupt"
+        }
+        # Enable pip (uncomment import site in ._pth)
+        $pth = Get-ChildItem $embedDir -Filter "*._pth" | Select-Object -First 1
         if ($pth) {
             (Get-Content $pth.FullName) -replace "^#import site","import site" |
-                Set-Content $pth.FullName
+                Set-Content $pth.FullName -Encoding UTF8
         }
         # Install pip
         $getpip = Join-Path $env:TEMP "get-pip.py"
         (New-Object Net.WebClient).DownloadFile("https://bootstrap.pypa.io/get-pip.py", $getpip)
-        & "$embedDir\python.exe" $getpip -q 2>$null | Out-Null
+        & $pyExe $getpip -q 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
         # Install customtkinter
-        & "$embedDir\python.exe" -m pip install customtkinter -q 2>$null | Out-Null
-        Write-Host "Python Embeddable ready: $embedDir\python.exe"
-        return "$embedDir\python.exe"
+        & $pyExe -m pip install customtkinter -q 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "customtkinter install failed" }
+        Write-Host "Python Embeddable ready: $pyExe"
+        return $pyExe
     } catch {
-        Write-Host "Embeddable download failed: $_"
+        Write-Host "Embeddable setup failed: $_"
+        if (Test-Path $embedDir) { Remove-Item $embedDir -Recurse -Force -EA SilentlyContinue }
         return $null
     }
 }
@@ -77,9 +88,10 @@ function Install-Customtkinter($pyExe) {
     $wheels = Join-Path $Dir "offline_deps\wheels"
     if (Test-Path $wheels) {
         & $pyExe -m pip install customtkinter --find-links $wheels --no-index -q 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) { return }
+        if ($LASTEXITCODE -eq 0) { Write-Host "customtkinter: installed from cache"; return }
     }
     & $pyExe -m pip install customtkinter -q 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Host "WARNING: customtkinter install failed - GUI may not start" }
 }
 
 function Get-PythonW($pyExe) {
