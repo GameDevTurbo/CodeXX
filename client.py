@@ -638,15 +638,17 @@ class ClientApp(ctk.CTk):
 
         elif ts["state"] == "service_stopped":
             self.ts_dot.configure(text_color=C_RED)
-            self.ts_stat.configure(text="Service not running — start it first", text_color=C_RED)
+            self.ts_stat.configure(text="Service not running", text_color=C_RED)
             self.btn_ts_connect.configure(text="① Start Service", fg_color="#8b3a00",
                                            command=self._ts_start_service)
             self.btn_ts_connect.pack(side="left", padx=(0, 6))
 
         elif ts["state"] == "starting":
             self.ts_dot.configure(text_color=C_ORANGE)
-            self.ts_stat.configure(text="Starting… click ↺ in a few seconds", text_color=C_ORANGE)
-            # No action button — just wait and refresh
+            self.ts_stat.configure(text="Initializing — may need restart", text_color=C_ORANGE)
+            self.btn_ts_connect.configure(text="Restart Service", fg_color="#8b3a00",
+                                           command=self._ts_restart_service)
+            self.btn_ts_connect.pack(side="left", padx=(0, 6))
 
         elif ts["state"] == "needs_login":
             self.ts_dot.configure(text_color=C_ORANGE)
@@ -680,6 +682,48 @@ class ClientApp(ctk.CTk):
                 self.chk_status_lbl.configure(text="Done", text_color=C_GREEN)
             ))
             self.after(3000, lambda: self.chk_status_lbl.configure(text=""))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _ts_restart_service(self):
+        """Restart Tailscale service (admin required). Output goes to log."""
+        self.log("─── Restarting Tailscale Service ──", "warn")
+        self.log("This requires admin rights — a UAC prompt may appear.", "dim")
+        def run():
+            try:
+                if OS == "Windows":
+                    # Use PowerShell RunAs to restart with admin
+                    r = subprocess.run(
+                        ["powershell", "-Command",
+                         "Start-Process powershell "
+                         "-Verb RunAs "
+                         "-ArgumentList '-Command','net stop tailscale; Start-Sleep 2; net start tailscale' "
+                         "-Wait"],
+                        capture_output=True, timeout=30, **ENC)
+                    out = (r.stdout + r.stderr).strip()
+                    if out:
+                        for line in out.splitlines():
+                            self.log(f"  {line}", "dim")
+                    if r.returncode == 0:
+                        self.log("Service restarted.", "ok")
+                    else:
+                        self.log("Restart may have failed or was cancelled.", "warn")
+                        self.log("Manual option: open Services app (services.msc)", "dim")
+                        self.log("  → right-click Tailscale → Restart", "dim")
+                elif OS == "Darwin":
+                    subprocess.run(["sudo", "launchctl", "stop", "com.tailscale.ipn"],
+                                   capture_output=True, timeout=10)
+                    subprocess.run(["sudo", "launchctl", "start", "com.tailscale.ipn"],
+                                   capture_output=True, timeout=10)
+                    self.log("Tailscale restarted (macOS).", "ok")
+                else:
+                    subprocess.run(["sudo", "systemctl", "restart", "tailscaled"],
+                                   capture_output=True, timeout=15)
+                    self.log("Tailscale restarted (Linux).", "ok")
+            except Exception as e:
+                self.log(f"Error: {e}", "error")
+            import time; time.sleep(4)
+            self.log("Rechecking status...", "dim")
+            self.after(0, self._ts_refresh)
         threading.Thread(target=run, daemon=True).start()
 
     def _ts_start_service(self):
