@@ -11,6 +11,7 @@ import subprocess
 import shutil
 import webbrowser
 from pathlib import Path
+from datetime import datetime
 
 try:
     import customtkinter as ctk
@@ -680,7 +681,7 @@ class ClientApp(ctk.CTk):
 
         def run():
             # Step 1: try net start (service might allow it without full admin)
-            self.after(0, lambda: self.log("Attempting: net start tailscale ...", "dim"))
+            self.log("Attempting: net start tailscale ...", "dim")
             r1 = subprocess.run(["net", "start", "tailscale"],
                                 capture_output=True, **ENC, **_NO_WIN)
             out1 = (r1.stdout + r1.stderr).strip()
@@ -689,10 +690,10 @@ class ClientApp(ctk.CTk):
                     self.after(0, lambda l=line: self.log(f"  {l}", "ok" if r1.returncode == 0 else "dim"))
 
             if r1.returncode == 0:
-                self.after(0, lambda: self.log("Service started!", "ok"))
+                self.log("Service started!", "ok")
             else:
                 # Step 2: try tailscale up — it may start the daemon implicitly
-                self.after(0, lambda: self.log("Trying: tailscale up ...", "dim"))
+                self.log("Trying: tailscale up ...", "dim")
                 r2 = subprocess.run([exe, "up"], capture_output=True, timeout=15, **ENC, **_NO_WIN)
                 out2 = (r2.stdout + r2.stderr).strip()
                 if out2:
@@ -739,9 +740,9 @@ class ClientApp(ctk.CTk):
                     self._ts_refresh()
                 ))
             except subprocess.TimeoutExpired:
-                self.after(0, lambda: self.log("Timeout — check Tailscale status manually", "warn"))
+                self.log("Timeout — check Tailscale status manually", "warn")
             except Exception as e:
-                self.after(0, lambda: self.log(f"Error: {e}", "error"))
+                self.log(f"Error: {e}", "error")
         threading.Thread(target=run, daemon=True).start()
 
     def _ts_disconnect(self):
@@ -763,7 +764,7 @@ class ClientApp(ctk.CTk):
                     self._ts_refresh()
                 ))
             except Exception as e:
-                self.after(0, lambda: self.log(f"Error: {e}", "error"))
+                self.log(f"Error: {e}", "error")
         threading.Thread(target=run, daemon=True).start()
 
     def _ts_login(self):
@@ -780,12 +781,12 @@ class ClientApp(ctk.CTk):
                 # No stdout redirect — let Tailscale open browser via Windows API
                 proc = subprocess.Popen([exe, "up"])
                 proc.wait(timeout=90)
-                self.after(0, lambda: self.log("tailscale up finished.", "dim"))
+                self.log("tailscale up finished.", "dim")
             except subprocess.TimeoutExpired:
                 proc.kill()
-                self.after(0, lambda: self.log("Timed out — check your browser.", "warn"))
+                self.log("Timed out — check your browser.", "warn")
             except Exception as e:
-                self.after(0, lambda: self.log(f"Error: {e}", "warn"))
+                self.log(f"Error: {e}", "warn")
         threading.Thread(target=run, daemon=True).start()
 
         # Poll every 3s for up to 60s after login attempt
@@ -860,7 +861,7 @@ class ClientApp(ctk.CTk):
         self.log(f"Installing {name or 'tool'}...", "warn")
 
         def log_live(m, k="dim"):
-            self.after(0, lambda: self.log(m, k))
+            self.log(m, k)
 
         def run():
             ok = False
@@ -921,10 +922,10 @@ class ClientApp(ctk.CTk):
                 ok = False
                 if name == "Tailscale":
                     ok = install_tailscale(
-                        lambda m, k="dim": self.after(0, lambda: self.log(m, k)))
+                        lambda m, k="dim": self.log(m, k))
                 elif name == "Node / npm":
                     ok = install_node(
-                        lambda m, k="dim": self.after(0, lambda: self.log(m, k)))
+                        lambda m, k="dim": self.log(m, k))
                 elif info.get("npm") and shutil.which("npm"):
                     r = subprocess.run(info["npm"].split(),
                                        capture_output=True, **ENC, **_NO_WIN)
@@ -942,11 +943,31 @@ class ClientApp(ctk.CTk):
             self.after(4000, lambda: self.chk_status_lbl.configure(text=""))
         threading.Thread(target=run, daemon=True).start()
 
-    def log(self, msg: str, color: str = C_TEXT):
-        self.log_box.configure(state="normal")
-        self.log_box.insert("end", f"{msg}\n")
-        self.log_box.configure(state="disabled")
-        self.log_box.see("end")
+    def log(self, msg: str, color: str = "normal"):
+        """Thread-safe log with color and timestamp. Call from any thread."""
+        COLOR_MAP = {
+            "normal": C_TEXT, "dim": C_DIM,
+            "ok": C_GREEN, "warn": C_ORANGE, "error": C_RED,
+        }
+        c = COLOR_MAP.get(color, color if color.startswith("#") else C_TEXT)
+        ts = datetime.now().strftime("%H:%M:%S")
+        text = f"[{ts}] {msg}\n"
+        def _insert():
+            self.log_box.configure(state="normal")
+            try:
+                tb = self.log_box._textbox
+                tag = f"c_{color}"
+                tb.tag_configure(tag, foreground=c)
+                tb.insert("end", text, tag)
+            except Exception:
+                self.log_box.insert("end", text)
+            self.log_box.configure(state="disabled")
+            self.log_box.see("end")
+        # Always schedule on main thread
+        try:
+            self.after(0, _insert)
+        except Exception:
+            pass  # window closed
 
     def _get_inputs(self) -> tuple[str, str]:
         return self.url_entry.get().strip(), self.key_entry.get().strip()
