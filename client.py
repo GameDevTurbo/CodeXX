@@ -658,15 +658,18 @@ class ClientApp(ctk.CTk):
         exe = find_tailscale()
         if not exe:
             self.log("Tailscale not found.", "error"); return
-        self.log("Connecting Tailscale...", "dim")
+        self.log(f"Connecting Tailscale via: {exe}", "dim")
         def run():
-            r = subprocess.run([exe, "up"], capture_output=True, timeout=30, **ENC, **_NO_WIN)
-            msg = r.stderr.strip() or r.stdout.strip()
-            self.after(0, lambda: (
-                self.log("Tailscale connected." if r.returncode == 0 else f"Error: {msg}",
-                         "ok" if r.returncode == 0 else "error"),
-                self._ts_refresh()
-            ))
+            try:
+                # No stdout redirect, no _NO_WIN — let Tailscale work normally
+                proc = subprocess.Popen([exe, "up"])
+                proc.wait(timeout=30)
+                self.after(0, lambda: (
+                    self.log("tailscale up finished — checking state...", "dim"),
+                    self._ts_refresh()
+                ))
+            except Exception as e:
+                self.after(0, lambda: self.log(f"Error: {e}", "error"))
         threading.Thread(target=run, daemon=True).start()
 
     def _ts_disconnect(self):
@@ -675,12 +678,15 @@ class ClientApp(ctk.CTk):
             self.log("Tailscale not found.", "error"); return
         self.log("Disconnecting Tailscale (LAN will be restored)...", "dim")
         def run():
-            r = subprocess.run([exe, "down"], capture_output=True, timeout=15, **ENC, **_NO_WIN)
-            self.after(0, lambda: (
-                self.log("Tailscale disconnected. LAN access restored." if r.returncode == 0
-                         else f"Error: {r.stderr.strip()}", "ok" if r.returncode == 0 else "error"),
-                self._ts_refresh()
-            ))
+            try:
+                proc = subprocess.Popen([exe, "down"])
+                proc.wait(timeout=15)
+                self.after(0, lambda: (
+                    self.log("Tailscale disconnected. LAN access restored.", "ok"),
+                    self._ts_refresh()
+                ))
+            except Exception as e:
+                self.after(0, lambda: self.log(f"Error: {e}", "error"))
         threading.Thread(target=run, daemon=True).start()
 
     def _ts_login(self):
@@ -689,26 +695,23 @@ class ClientApp(ctk.CTk):
             self.log("Tailscale not installed — click [Install] to auto-install.", "error")
             return
 
-        self.log("Connecting Tailscale — browser will open automatically for login...", "warn")
+        self.log(f"Starting Tailscale login via: {exe}", "warn")
+        self.log("A browser window should open — complete the login there.", "dim")
 
         def run():
             try:
-                # Run WITHOUT _NO_WIN so Tailscale can open the browser via Windows API
-                # Capture output to show login URL in log if available
-                proc = subprocess.Popen(
-                    [exe, "up"],
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    **ENC)
-                for line in proc.stdout:
-                    line = line.strip()
-                    if line:
-                        self.after(0, lambda l=line: self.log(l, "dim"))
+                # No stdout/stderr redirect, no _NO_WIN
+                # This lets Tailscale use Windows desktop APIs to open browser
+                proc = subprocess.Popen([exe, "up"])
                 proc.wait(timeout=90)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                self.after(0, lambda: self.log("tailscale up timed out", "warn"))
             except Exception as e:
-                self.after(0, lambda: self.log(f"tailscale up: {e}", "warn"))
+                self.after(0, lambda: self.log(f"Error: {e}", "warn"))
         threading.Thread(target=run, daemon=True).start()
 
-        # Poll status every 3s up to 60s
+        # Poll every 3s for up to 60s after login attempt
         self.after(3000, lambda: self._ts_poll_until_connected(0))
 
     def _ts_poll_until_connected(self, attempt: int):
