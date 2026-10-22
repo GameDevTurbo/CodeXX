@@ -1,8 +1,23 @@
-﻿# Sensitive files - DO NOT commit
+# Sensitive files - DO NOT commit
 config.yaml
 auths/
 .credentials.json
 offline_deps/
+data/
+.venv/
+.env
+.env.*
+!.env.example
+*.cliproxy
+*.sqlite*
+*.log
+log/
+build/
+dist/
+release/
+*.spec
+/CLIProxyAPI-Server.exe
+upgrade-backup-*/
 
 # Python cache
 __pycache__/

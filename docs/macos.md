@@ -1,47 +1,13 @@
-# macOS 使用指南
+# macOS Server
 
-## 部署服务（服务端）
+下载与你的芯片匹配的 macOS-arm64（Apple Silicon）或 macOS-x64（Intel）包，打开 CLIProxyAPI-Server.app；预编译包不需要 Python。Docker Desktop 同样要与芯片兼容。
 
-**前置**
-- [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop/)
+App 尚无 Apple 开发者签名、公证。遇到系统或组织的安装限制，使用获准的软件安装流程；不会自动关闭安全策略。Tailscale 网络扩展许可及账号登录由用户确认。
 
-**步骤**
+源码可运行 bash Server.command，需含 tkinter 的 Python 3.10+。依赖在项目 .venv 中，不向 Homebrew 的全局 Python 强行安装。
 
-1. 克隆或下载本项目
-2. 在项目目录运行：
+新发布版数据默认 ~/Library/Application Support/CodeXX/Server，不写 App 内部；旧根目录 config.yaml 保持兼容。使用路径带空格的数据目录时务必加引号。
 
-```bash
-bash start.sh
-```
+诊断 CLI：./CLIProxyAPI-Server.app/Contents/MacOS/CLIProxyAPI-Server --doctor --report doctor.json
 
-3. 弹出图形界面后步骤与 Windows 相同：
-   点 **[Start Docker]** → **[Setup]** → **[Generate and Deploy]**
-
-或纯命令行方式：
-
-```bash
-bash scripts/deploy.sh
-```
-
-管理面板：http://localhost:8317/management.html
-
----
-
-## 使用服务（客户端）
-
-```bash
-python3 client.py
-```
-
-操作同 Windows 客户端部分。
-
----
-
-## 常见问题
-
-| 问题 | 解决 |
-|------|------|
-| Python 未找到 | `brew install python3` 或从 python.org 安装 |
-| Docker 未运行 | 打开 Docker Desktop 等待就绪 |
-| cc-switch 返回 404 | 协议改为 **OpenAI Responses** |
-| 容器无法访问上游 | 本地代理配置同 Windows Docker Proxies 步骤 |
+本轮在 Windows 做实现与回归；Mac 已提供原生 App 构建、双架构 CI 和静态入口检查，但 Finder、Tk、Docker/Tailscale 网络及托盘需 Mac 真机继续验收。

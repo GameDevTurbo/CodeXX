@@ -1,4 +1,6 @@
-#!/bin/bash
-# Double-click this in Finder to open the Client (Connect) tool
+#!/usr/bin/env bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
-bash "$DIR/start.sh" client.py
+if [[ -f "$DIR/../CodeXX-Client/Client.command" ]]; then
+  exec bash "$DIR/../CodeXX-Client/Client.command" "$@"
+fi
+exec open "https://github.com/GameDevTurbo/CodeXX-Client/releases"

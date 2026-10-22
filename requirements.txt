@@ -1,1 +1,2 @@
-customtkinter
+customtkinter>=6.0,<7
+PyYAML>=6.0,<7

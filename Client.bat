@@ -1,3 +1,6 @@
-﻿@echo off
-if exist "%~dp0CLIProxyAPI-Client.exe" (start "" "%~dp0CLIProxyAPI-Client.exe" & goto :eof)
-powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0_bootstrap.ps1" "%~dp0" "client.py"
+@echo off
+if exist "%~dp0..\CodeXX-Client\Client.bat" (
+  call "%~dp0..\CodeXX-Client\Client.bat" %*
+  exit /b
+)
+start "" "https://github.com/GameDevTurbo/CodeXX-Client/releases"

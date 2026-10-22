@@ -11,6 +11,8 @@ Windows 版 Tailscale 的命令行工具是 `tailscale.exe`，而通知区/登�
 - `launcher.py` 和 `client.py` 现在在 Windows 上优先启动
   `C:\Program Files\Tailscale\tailscale-ipn.exe`。
 - 若未安装图形程序，仍会回退到 `tailscale up`，以便在终端完成网页登录。
+- 当 Windows 服务卡在 `NoState` 时，客户端会提供 **Repair**，自动请求 UAC 权限重启
+  Tailscale 服务，并打开网页登录链接。
 
 ## 本机恢复步骤
 

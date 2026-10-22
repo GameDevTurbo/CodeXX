@@ -1,4 +1,3 @@
-#!/bin/bash
-# Double-click this in Finder to open the Server (Deploy) tool
+#!/usr/bin/env bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
-bash "$DIR/start.sh" launcher.py
+exec bash "$DIR/scripts/start.sh" server "$@"

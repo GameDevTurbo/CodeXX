@@ -1,46 +1,11 @@
-# Windows 使用指南
+# Windows Server
 
-## 部署服务（服务端）
+普通用户下载 Windows-x64 Server 发布包，解压后打开 EXE；源码用户打开 Server.bat。源码需要含 Tk 的 Python 3.10+，依赖安装到项目 .venv。源码初始化失败会返回错误，日志在 %LOCALAPPDATA%\CodeXX-Server\startup.log。
 
-**前置**
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- 本机代理软件（7890 或其他端口）
+先运行 Docker Desktop；Tailscale 用于远程访问时才需要。安装、系统权限、账号登录仍需用户授权，不以“全自动”为由绕过 UAC。
 
-**步骤**
+新发布版数据在 %LOCALAPPDATA%\CodeXX\Server；已有根目录配置保持兼容。可用 --data-dir 明确指定同一数据目录。关闭 Server 管理窗口不停止 Docker 容器。
 
-1. 克隆或下载本项目
-2. 双击 `start.bat`
-3. 点 **[Start Docker]** 等待 Docker 就绪
-4. 点 **[Setup]** → 填代理端口（如 `7890`）→ **[Generate and Deploy]**
-5. 界面显示 Connection Info，保存 API Key 和管理密码
+按 [部署指南](deployment.md) 诊断、初始化、部署、认证、导出。只使用服务的电脑安装独立 CodeXX-Client，不要运行本仓库的历史 client.py 实现。
 
-> **Docker Desktop 代理配置（必须）**
-> Settings → Proxies → Manual → HTTP/HTTPS 填 `http://127.0.0.1:代理端口` → Apply & Restart
->
-> 跳过此步服务能启动，但调用模型时会报 500 错误。
-
-管理面板：http://localhost:8317/management.html，登录后添加 ChatGPT / Claude 账号。
-
----
-
-## 使用服务（客户端）
-
-1. 双击 `start.bat` → 在启动器点 **[Open Client Tool]**
-   或直接运行：`python client.py`
-2. 点 **[Import .cliproxy file]** 导入服务端导出的配置文件
-   或手动填写 API 地址和 Key
-3. 点 **[Test Connection]** 验证
-4. 点 **[All at once]** 一键配置 Claude Code + cc-switch + 环境变量
-
-> cc-switch 协议必须选 **OpenAI Responses**（不是 Chat）
-
----
-
-## 常见问题
-
-| 问题 | 解决 |
-|------|------|
-| 模型调用返回 500 | Docker Desktop → Settings → Proxies 配置代理 |
-| cc-switch 返回 404 | 协议改为 **OpenAI Responses** |
-| Tailscale 导致局域网断 | client.py → **[Disconnect (keep LAN)]** |
-| Docker 启动失败 | 在开始菜单打开 Docker Desktop，等图标稳定 |
+本轮自测以隔离临时目录和模拟服务为主；真实服务器只读检查，不反复启停线上容器。Windows 构建成功不代表 Mac 实机验证完成。
