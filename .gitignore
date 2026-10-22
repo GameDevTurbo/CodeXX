@@ -25,3 +25,6 @@ Thumbs.db
 .claude/worktrees/
 .claude/todos/
 .claude/memory/
+build/
+dist/
+*.spec
