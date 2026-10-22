@@ -669,45 +669,77 @@ class ClientApp(ctk.CTk):
         threading.Thread(target=run, daemon=True).start()
 
     def _ts_start_service(self):
-        """Start the Tailscale service/daemon."""
-        self.log("Starting Tailscale service...", "warn")
+        """Start the Tailscale service/daemon. All output goes to the log panel."""
+        self.log("─── Starting Tailscale Service ───", "warn")
+        exe = find_tailscale()
+        if not exe:
+            self.log("ERROR: tailscale.exe not found. Is Tailscale installed?", "error")
+            return
+
+        self.log(f"Found: {exe}", "dim")
+
         def run():
-            try:
-                if OS == "Windows":
-                    # Try starting Windows service (may prompt UAC)
-                    r = subprocess.run(
-                        ["powershell", "-Command",
-                         "Start-Process powershell -Verb RunAs "
-                         "-ArgumentList 'net start tailscale' -Wait"],
-                        timeout=30)
-                    # Also try opening the Tailscale app (it starts the service)
-                    exe = find_tailscale()
-                    if exe:
-                        subprocess.Popen([exe, "up"])
-                elif OS == "Darwin":
-                    subprocess.Popen(["open", "-a", "Tailscale"])
-                else:
-                    subprocess.run(["sudo", "systemctl", "start", "tailscaled"], timeout=15)
-            except Exception as e:
-                self.after(0, lambda: self.log(f"Start service: {e}", "warn"))
-            import time; time.sleep(3)
-            self.after(0, self._ts_refresh)
+            # Step 1: try net start (service might allow it without full admin)
+            self.after(0, lambda: self.log("Attempting: net start tailscale ...", "dim"))
+            r1 = subprocess.run(["net", "start", "tailscale"],
+                                capture_output=True, **ENC, **_NO_WIN)
+            out1 = (r1.stdout + r1.stderr).strip()
+            if out1:
+                for line in out1.splitlines():
+                    self.after(0, lambda l=line: self.log(f"  {l}", "ok" if r1.returncode == 0 else "dim"))
+
+            if r1.returncode == 0:
+                self.after(0, lambda: self.log("Service started!", "ok"))
+            else:
+                # Step 2: try tailscale up — it may start the daemon implicitly
+                self.after(0, lambda: self.log("Trying: tailscale up ...", "dim"))
+                r2 = subprocess.run([exe, "up"], capture_output=True, timeout=15, **ENC, **_NO_WIN)
+                out2 = (r2.stdout + r2.stderr).strip()
+                if out2:
+                    for line in out2.splitlines():
+                        self.after(0, lambda l=line: self.log(f"  {l}", "dim"))
+
+                if r2.returncode != 0:
+                    # Step 3: need admin — show clear instructions in log
+                    self.after(0, lambda: (
+                        self.log("─── Admin Required ───────────────", "warn"),
+                        self.log("The Tailscale service needs to be started with admin rights.", "warn"),
+                        self.log("Please do ONE of the following:", "warn"),
+                        self.log("  A) Open Start Menu → search 'Tailscale' → Run as administrator", "dim"),
+                        self.log("  B) Open CMD as Administrator → type: net start tailscale", "dim"),
+                        self.log("  C) Open Services (services.msc) → find Tailscale → Start", "dim"),
+                        self.log("After starting, click ↺ Refresh in this tool.", "dim"),
+                        self.log("──────────────────────────────────", "warn"),
+                    ))
+
+            import time; time.sleep(2)
+            self.after(0, lambda: (
+                self.log("Rechecking Tailscale status...", "dim"),
+                self._ts_refresh()
+            ))
         threading.Thread(target=run, daemon=True).start()
 
     def _ts_connect(self):
         exe = find_tailscale()
         if not exe:
             self.log("Tailscale not found.", "error"); return
-        self.log(f"Connecting Tailscale via: {exe}", "dim")
+        self.log("─── Connecting Tailscale ──────────", "warn")
+        self.log(f"Running: {exe} up", "dim")
         def run():
             try:
-                # No stdout redirect, no _NO_WIN — let Tailscale work normally
-                proc = subprocess.Popen([exe, "up"])
-                proc.wait(timeout=30)
+                r = subprocess.run([exe, "up"], capture_output=True,
+                                   timeout=30, **ENC, **_NO_WIN)
+                out = (r.stdout + r.stderr).strip()
+                if out:
+                    for line in out.splitlines():
+                        self.after(0, lambda l=line: self.log(f"  {l}", "dim"))
                 self.after(0, lambda: (
-                    self.log("tailscale up finished — checking state...", "dim"),
+                    self.log("Connected!" if r.returncode == 0
+                             else f"Exit code: {r.returncode}", "ok" if r.returncode == 0 else "warn"),
                     self._ts_refresh()
                 ))
+            except subprocess.TimeoutExpired:
+                self.after(0, lambda: self.log("Timeout — check Tailscale status manually", "warn"))
             except Exception as e:
                 self.after(0, lambda: self.log(f"Error: {e}", "error"))
         threading.Thread(target=run, daemon=True).start()
@@ -716,13 +748,18 @@ class ClientApp(ctk.CTk):
         exe = find_tailscale()
         if not exe:
             self.log("Tailscale not found.", "error"); return
-        self.log("Disconnecting Tailscale (LAN will be restored)...", "dim")
+        self.log("─── Disconnecting Tailscale ───────", "warn")
         def run():
             try:
-                proc = subprocess.Popen([exe, "down"])
-                proc.wait(timeout=15)
+                r = subprocess.run([exe, "down"], capture_output=True,
+                                   timeout=15, **ENC, **_NO_WIN)
+                out = (r.stdout + r.stderr).strip()
+                if out:
+                    for line in out.splitlines():
+                        self.after(0, lambda l=line: self.log(f"  {l}", "dim"))
                 self.after(0, lambda: (
-                    self.log("Tailscale disconnected. LAN access restored.", "ok"),
+                    self.log("Disconnected. LAN access restored." if r.returncode == 0
+                             else "Disconnect may have failed.", "ok" if r.returncode == 0 else "warn"),
                     self._ts_refresh()
                 ))
             except Exception as e:
@@ -734,19 +771,19 @@ class ClientApp(ctk.CTk):
         if not exe:
             self.log("Tailscale not installed — click [Install] to auto-install.", "error")
             return
-
-        self.log(f"Starting Tailscale login via: {exe}", "warn")
-        self.log("A browser window should open — complete the login there.", "dim")
+        self.log("─── Tailscale Login ───────────────", "warn")
+        self.log(f"Running: {exe} up", "dim")
+        self.log("A browser should open automatically — complete login there.", "dim")
 
         def run():
             try:
-                # No stdout/stderr redirect, no _NO_WIN
-                # This lets Tailscale use Windows desktop APIs to open browser
+                # No stdout redirect — let Tailscale open browser via Windows API
                 proc = subprocess.Popen([exe, "up"])
                 proc.wait(timeout=90)
+                self.after(0, lambda: self.log("tailscale up finished.", "dim"))
             except subprocess.TimeoutExpired:
                 proc.kill()
-                self.after(0, lambda: self.log("tailscale up timed out", "warn"))
+                self.after(0, lambda: self.log("Timed out — check your browser.", "warn"))
             except Exception as e:
                 self.after(0, lambda: self.log(f"Error: {e}", "warn"))
         threading.Thread(target=run, daemon=True).start()
