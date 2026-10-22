@@ -244,154 +244,155 @@ class ClientApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("CLIProxyAPI Client Setup")
-        self.geometry("560x920")
+        self.geometry("580x940")
         self.resizable(False, False)
         self.configure(fg_color=C_BG)
+        self._ts_connected = False   # gate for Step 2
         self._build_ui()
         self.after(200, self._check_tools)
         self.after(300, self._ts_refresh)
+        self._auto = self.after(10000, self._tick)   # 10s auto-refresh
+
+    def _tick(self):
+        self._ts_refresh()
+        self._auto = self.after(10000, self._tick)
 
     def _build_ui(self):
-        # Header
-        ctk.CTkLabel(self, text="Client Setup",
+        # ── Header ───────────────────────────────────────────────────────────
+        ctk.CTkLabel(self, text="CLIProxyAPI Client",
                      font=ctk.CTkFont(size=20, weight="bold"),
                      text_color=C_BLUE).pack(anchor="w", padx=20, pady=(16, 0))
-        ctk.CTkLabel(self, text="Connect this machine to a CLIProxyAPI server",
+        ctk.CTkLabel(self, text="Follow the steps below to connect and configure.",
                      font=ctk.CTkFont(size=11), text_color=C_DIM
-                     ).pack(anchor="w", padx=20, pady=(0, 12))
+                     ).pack(anchor="w", padx=20, pady=(0, 10))
 
-        # Import section
-        imp = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
-        imp.pack(fill="x", padx=20, pady=(0, 8))
+        # ── STEP 1: Tailscale ─────────────────────────────────────────────
+        s1 = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
+        s1.pack(fill="x", padx=20, pady=(0, 8))
 
-        ctk.CTkLabel(imp, text="Server Connection",
+        s1h = ctk.CTkFrame(s1, fg_color="transparent")
+        s1h.pack(fill="x", padx=14, pady=(10, 4))
+        ctk.CTkLabel(s1h, text="Step 1 — Tailscale Network",
                      font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color=C_TEXT).pack(anchor="w", padx=14, pady=(12, 4))
+                     text_color=C_TEXT).pack(side="left")
+        ctk.CTkLabel(s1h, text="Required for remote access",
+                     font=ctk.CTkFont(size=9), text_color=C_DIM).pack(side="right")
 
-        # Import file button
-        top = ctk.CTkFrame(imp, fg_color="transparent")
-        top.pack(fill="x", padx=14, pady=(0, 8))
-        ctk.CTkButton(top, text="Import .cliproxy file", width=170,
+        ts_row = ctk.CTkFrame(s1, fg_color="transparent")
+        ts_row.pack(fill="x", padx=14, pady=(0, 4))
+        self.ts_dot  = ctk.CTkLabel(ts_row, text="●", font=ctk.CTkFont(size=14),
+                                     text_color=C_DIM, width=18)
+        self.ts_dot.pack(side="left")
+        self.ts_stat = ctk.CTkLabel(ts_row, text="Checking...",
+                                     font=ctk.CTkFont(size=10), text_color=C_DIM)
+        self.ts_stat.pack(side="left", padx=(4, 0))
+
+        ts_btns = ctk.CTkFrame(s1, fg_color="transparent")
+        ts_btns.pack(fill="x", padx=14, pady=(2, 10))
+        self.btn_ts_connect = ctk.CTkButton(
+            ts_btns, text="Connect", width=110, height=28,
+            font=ctk.CTkFont(size=9, weight="bold"),
+            fg_color=C_GREEN, hover_color="#2d8a3e",
+            command=self._ts_connect)
+        self.btn_ts_connect.pack(side="left", padx=(0, 6))
+        self.btn_ts_disconnect = ctk.CTkButton(
+            ts_btns, text="Disconnect (keep LAN)", width=175, height=28,
+            font=ctk.CTkFont(size=9, weight="bold"),
+            fg_color="#7a2020", hover_color="#601818",
+            command=self._ts_disconnect)
+        self.btn_ts_disconnect.pack(side="left", padx=(0, 6))
+        ctk.CTkButton(ts_btns, text="↺", width=32, height=28,
+                      font=ctk.CTkFont(size=11),
+                      fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
+                      border_width=1, border_color=C_DIM,
+                      command=self._ts_refresh).pack(side="left")
+
+        # ── STEP 2: Server Connection ─────────────────────────────────────
+        self.s2_frame = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
+        self.s2_frame.pack(fill="x", padx=20, pady=(0, 8))
+
+        s2h = ctk.CTkFrame(self.s2_frame, fg_color="transparent")
+        s2h.pack(fill="x", padx=14, pady=(10, 4))
+        ctk.CTkLabel(s2h, text="Step 2 — Server Connection",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=C_TEXT).pack(side="left")
+        self.s2_hint = ctk.CTkLabel(s2h, text="⚠ Complete Step 1 first",
+                                     font=ctk.CTkFont(size=9), text_color=C_ORANGE)
+        self.s2_hint.pack(side="right")
+
+        top = ctk.CTkFrame(self.s2_frame, fg_color="transparent")
+        top.pack(fill="x", padx=14, pady=(0, 6))
+        ctk.CTkButton(top, text="Import .cliproxy file", width=165,
                       fg_color=C_PANEL, border_width=1, border_color=C_DIM,
                       text_color=C_DIM, font=ctk.CTkFont(size=10),
                       hover_color=C_CARD,
                       command=self._import_file).pack(side="left")
         ctk.CTkLabel(top, text="or enter manually:",
                      text_color=C_DIM, font=ctk.CTkFont(size=10)
-                     ).pack(side="left", padx=(12, 0))
+                     ).pack(side="left", padx=(10, 0))
 
-        # Manual entry
-        def row(parent, label, placeholder, show=""):
-            f = ctk.CTkFrame(parent, fg_color="transparent")
+        def entry_row(label, placeholder):
+            f = ctk.CTkFrame(self.s2_frame, fg_color="transparent")
             f.pack(fill="x", padx=14, pady=3)
-            ctk.CTkLabel(f, text=label, width=90, anchor="w",
+            ctk.CTkLabel(f, text=label, width=80, anchor="w",
                          text_color=C_DIM, font=ctk.CTkFont(size=10)).pack(side="left")
-            e = ctk.CTkEntry(f, placeholder_text=placeholder, show=show,
-                             fg_color=C_INPUT, border_color=C_DIM, font=ctk.CTkFont(size=10))
+            e = ctk.CTkEntry(f, placeholder_text=placeholder,
+                             fg_color=C_INPUT, border_color=C_DIM,
+                             font=ctk.CTkFont(size=10))
             e.pack(side="left", fill="x", expand=True)
             return e
 
-        self.url_entry = row(imp, "API URL", "http://100.x.x.x:8317/v1")
-        self.key_entry = row(imp, "API Key", "sk-...")
+        self.url_entry = entry_row("API URL", "http://100.x.x.x:8317/v1")
+        self.key_entry = entry_row("API Key", "sk-...")
 
-        # Test button
-        test_row = ctk.CTkFrame(imp, fg_color="transparent")
+        test_row = ctk.CTkFrame(self.s2_frame, fg_color="transparent")
         test_row.pack(fill="x", padx=14, pady=(6, 12))
-        ctk.CTkButton(test_row, text="Test Connection", width=140,
-                      fg_color=C_BLUE, hover_color="#2a6fd4",
-                      font=ctk.CTkFont(size=10, weight="bold"),
-                      command=self._test).pack(side="left")
-        self.test_lbl = ctk.CTkLabel(test_row, text="",
+        self.btn_test = ctk.CTkButton(test_row, text="Test Connection", width=145,
+                                       fg_color=C_BLUE, hover_color="#2a6fd4",
+                                       font=ctk.CTkFont(size=10, weight="bold"),
+                                       command=self._test, state="disabled")
+        self.btn_test.pack(side="left")
+        self.test_lbl = ctk.CTkLabel(test_row, text="Connect Tailscale to enable",
                                       font=ctk.CTkFont(size=10), text_color=C_DIM)
         self.test_lbl.pack(side="left", padx=(10, 0))
 
-        # Configure section
-        cfg = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
-        cfg.pack(fill="x", padx=20, pady=(0, 8))
-
-        ctk.CTkLabel(cfg, text="Configure Local Tools",
-                     font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color=C_TEXT).pack(anchor="w", padx=14, pady=(12, 6))
-
-        tools = [
-            ("Claude Code", "Auto-set ANTHROPIC_BASE_URL in ~/.claude/settings.json",
-             self._cfg_claude),
-            ("cc-switch",   "Add 'cliproxy' provider to ~/.codex/config.toml",
-             self._cfg_ccswitch),
-            ("Env Vars",    "Set OPENAI_BASE_URL / ANTHROPIC_BASE_URL system-wide",
-             self._cfg_env),
-            ("All at once", "Configure all tools above in one click",
-             self._cfg_all),
+        # Configure local tools (inside step 2)
+        cfg = ctk.CTkFrame(self.s2_frame, fg_color=C_PANEL, corner_radius=6)
+        cfg.pack(fill="x", padx=14, pady=(0, 12))
+        ctk.CTkLabel(cfg, text="Configure",
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=C_DIM).pack(anchor="w", padx=12, pady=(8, 4))
+        tools_cfg = [
+            ("Claude Code", self._cfg_claude),
+            ("cc-switch",   self._cfg_ccswitch),
+            ("Env Vars",    self._cfg_env),
+            ("All at once", self._cfg_all),
         ]
-
         self.tool_labels = {}
-        for name, desc, cmd in tools:
-            row_f = ctk.CTkFrame(cfg, fg_color="transparent")
-            row_f.pack(fill="x", padx=14, pady=4)
-            ctk.CTkButton(row_f, text=name, width=130,
-                          fg_color=C_PANEL, border_width=1, border_color=C_DIM,
-                          text_color=C_TEXT, font=ctk.CTkFont(size=10),
-                          hover_color=C_CARD, command=cmd).pack(side="left")
-            lbl = ctk.CTkLabel(row_f, text=desc, text_color=C_DIM,
-                               font=ctk.CTkFont(size=9), anchor="w")
-            lbl.pack(side="left", padx=(10, 0))
-            self.tool_labels[name] = lbl
+        cfg_row = ctk.CTkFrame(cfg, fg_color="transparent")
+        cfg_row.pack(fill="x", padx=12, pady=(0, 8))
+        for name, cmd in tools_cfg:
+            ctk.CTkButton(cfg_row, text=name, width=105, height=26,
+                          fg_color=C_CARD, border_width=1, border_color=C_DIM,
+                          text_color=C_TEXT, font=ctk.CTkFont(size=9),
+                          hover_color="#22222e", command=cmd).pack(side="left", padx=(0, 4))
+            self.tool_labels[name] = None   # not used for status here
 
-        ctk.CTkFrame(cfg, fg_color="transparent", height=8).pack()
-
-        # Tailscale section
-        tsf = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
-        tsf.pack(fill="x", padx=20, pady=(0, 8))
-
-        hdr = ctk.CTkFrame(tsf, fg_color="transparent")
-        hdr.pack(fill="x", padx=14, pady=(10, 4))
-        ctk.CTkLabel(hdr, text="Tailscale (Remote Network)",
-                     font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color=C_TEXT).pack(side="left")
-
-        self.ts_dot  = ctk.CTkLabel(tsf, text="●", font=ctk.CTkFont(size=14),
-                                     text_color=C_DIM)
-        self.ts_dot.pack(side="left", padx=(14,4), pady=(0,8))
-        self.ts_stat = ctk.CTkLabel(tsf, text="Checking...",
-                                     font=ctk.CTkFont(size=10), text_color=C_DIM)
-        self.ts_stat.pack(side="left", pady=(0,8))
-
-        btn_row = ctk.CTkFrame(tsf, fg_color="transparent")
-        btn_row.pack(fill="x", padx=14, pady=(0, 10))
-
-        self.btn_ts_connect = ctk.CTkButton(
-            btn_row, text="Connect", width=100, height=28,
-            font=ctk.CTkFont(size=9, weight="bold"),
-            fg_color=C_GREEN, hover_color="#2d8a3e",
-            command=self._ts_connect)
-        self.btn_ts_connect.pack(side="left", padx=(0, 6))
-
-        self.btn_ts_disconnect = ctk.CTkButton(
-            btn_row, text="Disconnect (keep LAN)", width=170, height=28,
-            font=ctk.CTkFont(size=9, weight="bold"),
-            fg_color="#7a2020", hover_color="#601818",
-            command=self._ts_disconnect)
-        self.btn_ts_disconnect.pack(side="left", padx=(0, 6))
-
-        ctk.CTkButton(btn_row, text="↺", width=32, height=28,
-                      font=ctk.CTkFont(size=11),
-                      fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
-                      border_width=1, border_color=C_DIM,
-                      command=self._ts_refresh).pack(side="left")
-
-        # Tool checker section
+        # ── STEP 3: Required Tools ───────────────────────────────────────
         chk = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
         chk.pack(fill="x", padx=20, pady=(0, 8))
 
         chk_hdr = ctk.CTkFrame(chk, fg_color="transparent")
-        chk_hdr.pack(fill="x", padx=14, pady=(12, 6))
-        ctk.CTkLabel(chk_hdr, text="Required Tools",
+        chk_hdr.pack(fill="x", padx=14, pady=(10, 6))
+        ctk.CTkLabel(chk_hdr, text="Step 3 — Install Required Tools",
                      font=ctk.CTkFont(size=11, weight="bold"),
                      text_color=C_TEXT).pack(side="left")
-        ctk.CTkButton(chk_hdr, text="⚡ Setup All", width=110, height=26,
-                      font=ctk.CTkFont(size=9, weight="bold"),
-                      fg_color=C_BLUE, hover_color="#2a6fd4",
-                      command=self._setup_all).pack(side="right")
+        self.btn_setup_all = ctk.CTkButton(
+            chk_hdr, text="⚡ Setup All", width=110, height=26,
+            font=ctk.CTkFont(size=9, weight="bold"),
+            fg_color=C_BLUE, hover_color="#2a6fd4",
+            command=self._setup_all)
+        self.btn_setup_all.pack(side="right")
 
         self.tool_rows: dict = {}
         TOOLS = [
@@ -414,10 +415,10 @@ class ClientApp(ctk.CTk):
             dot.pack(side="left")
             lbl  = ctk.CTkLabel(row, text=name, font=ctk.CTkFont(size=10),
                                  text_color=C_TEXT, width=100, anchor="w")
-            lbl.pack(side="left", padx=(4,0))
-            stat = ctk.CTkLabel(row, text="—", font=ctk.CTkFont(size=9),
-                                 text_color=C_DIM, width=150, anchor="w")
-            stat.pack(side="left", padx=(6,0))
+            lbl.pack(side="left", padx=(4, 0))
+            stat = ctk.CTkLabel(row, text="Checking...", font=ctk.CTkFont(size=9),
+                                 text_color=C_DIM, width=160, anchor="w")
+            stat.pack(side="left", padx=(6, 0))
             btn  = ctk.CTkButton(row, text="Install", width=80, height=24,
                                   font=ctk.CTkFont(size=8),
                                   fg_color=C_ORANGE, hover_color="#a06020",
@@ -429,17 +430,20 @@ class ClientApp(ctk.CTk):
                                      "cmd": cmd, "url": url,
                                      "npm": npm_cmd, "winget": winget_id}
 
-        btn_row = ctk.CTkFrame(chk, fg_color="transparent")
-        btn_row.pack(fill="x", padx=14, pady=(4, 12))
-        ctk.CTkButton(btn_row, text="↺  Recheck", width=90, height=26,
-                      font=ctk.CTkFont(size=9),
-                      fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
-                      border_width=1, border_color=C_DIM,
-                      command=lambda: threading.Thread(
-                          target=self._check_tools_bg, daemon=True).start()
-                      ).pack(side="left")
+        chk_bot = ctk.CTkFrame(chk, fg_color="transparent")
+        chk_bot.pack(fill="x", padx=14, pady=(4, 12))
+        self.btn_recheck = ctk.CTkButton(
+            chk_bot, text="↺  Recheck", width=90, height=26,
+            font=ctk.CTkFont(size=9),
+            fg_color=C_PANEL, hover_color=C_CARD, text_color=C_DIM,
+            border_width=1, border_color=C_DIM,
+            command=self._recheck_tools)
+        self.btn_recheck.pack(side="left")
+        self.chk_status_lbl = ctk.CTkLabel(
+            chk_bot, text="", font=ctk.CTkFont(size=9), text_color=C_DIM)
+        self.chk_status_lbl.pack(side="left", padx=(10, 0))
 
-        # Log
+        # ── Log ──────────────────────────────────────────────────────────
         ctk.CTkLabel(self, text="Log", font=ctk.CTkFont(size=10),
                      text_color=C_DIM).pack(anchor="w", padx=20)
         self.log_box = ctk.CTkTextbox(
@@ -458,9 +462,23 @@ class ClientApp(ctk.CTk):
         self.after(0, lambda: self._ts_apply(ts))
 
     def _ts_apply(self, ts: dict):
-        """Update Tailscale UI. Reset all buttons first to avoid reorder bugs."""
+        """Update Tailscale UI and gate Step 2."""
         self.btn_ts_connect.pack_forget()
         self.btn_ts_disconnect.pack_forget()
+
+        connected = ts.get("connected", False)
+        self._ts_connected = connected
+
+        # Gate Step 2: enable Test Connection only when Tailscale is connected
+        if connected:
+            self.btn_test.configure(state="normal", fg_color=C_BLUE)
+            self.test_lbl.configure(text="", text_color=C_DIM)
+            self.s2_hint.configure(text="✓ Tailscale connected", text_color=C_GREEN)
+        else:
+            self.btn_test.configure(state="disabled", fg_color=C_DIM)
+            self.test_lbl.configure(text="Connect Tailscale to enable",
+                                    text_color=C_DIM)
+            self.s2_hint.configure(text="⚠ Complete Step 1 first", text_color=C_ORANGE)
 
         if not ts["installed"]:
             self.ts_dot.configure(text_color=C_DIM)
@@ -470,29 +488,44 @@ class ClientApp(ctk.CTk):
                 text="Install", fg_color=C_ORANGE,
                 command=lambda: self._install_tool(
                     "https://tailscale.com/download", None, "tailscale"))
-            self.btn_ts_connect.pack(side="left", padx=(0,6))
+            self.btn_ts_connect.pack(side="left", padx=(0, 6))
 
-        elif ts["connected"]:
+        elif connected:
             self.ts_dot.configure(text_color=C_GREEN)
             self.ts_stat.configure(
-                text=f"Connected · {ts['ip']} — ready for remote access", text_color=C_GREEN)
-            self.btn_ts_disconnect.pack(side="left", padx=(0,6))
+                text=f"Connected · {ts['ip']} — ready for remote access",
+                text_color=C_GREEN)
+            self.btn_ts_disconnect.pack(side="left", padx=(0, 6))
 
         elif ts["state"] == "needs_login":
             self.ts_dot.configure(text_color=C_ORANGE)
             self.ts_stat.configure(
-                text="Not logged in — click Login to authenticate", text_color=C_ORANGE)
+                text="Not logged in — click Login (browser will open)",
+                text_color=C_ORANGE)
             self.btn_ts_connect.configure(text="Login", fg_color=C_ORANGE,
                                            command=self._ts_login)
-            self.btn_ts_connect.pack(side="left", padx=(0,6))
+            self.btn_ts_connect.pack(side="left", padx=(0, 6))
 
         else:
             self.ts_dot.configure(text_color=C_RED)
             self.ts_stat.configure(
-                text="Disconnected — click Connect to rejoin network", text_color=C_RED)
+                text="Disconnected — click Connect to rejoin", text_color=C_RED)
             self.btn_ts_connect.configure(text="Connect", fg_color=C_GREEN,
                                            command=self._ts_connect)
-            self.btn_ts_connect.pack(side="left", padx=(0,6))
+            self.btn_ts_connect.pack(side="left", padx=(0, 6))
+
+    def _recheck_tools(self):
+        """Recheck with visual busy indicator."""
+        self.btn_recheck.configure(text="↺ Checking...", state="disabled")
+        self.chk_status_lbl.configure(text="Scanning...", text_color=C_DIM)
+        def run():
+            self._check_tools_bg()
+            self.after(0, lambda: (
+                self.btn_recheck.configure(text="↺  Recheck", state="normal"),
+                self.chk_status_lbl.configure(text="Done", text_color=C_GREEN)
+            ))
+            self.after(3000, lambda: self.chk_status_lbl.configure(text=""))
+        threading.Thread(target=run, daemon=True).start()
 
     def _ts_connect(self):
         exe = find_tailscale()
@@ -665,12 +698,19 @@ class ClientApp(ctk.CTk):
 
     def _setup_all(self):
         """Install all missing tools in sequence, non-blocking."""
+        self.btn_setup_all.configure(text="Installing... please wait", state="disabled")
+        self.chk_status_lbl.configure(text="", text_color=C_DIM)
         self.log("=== Setting up all missing tools ===", "warn")
         def run():
+            installed_any = False
             for name, info in self.tool_rows.items():
                 if shutil.which(info["cmd"]):
-                    continue  # already installed
-                self.after(0, lambda n=name: self.log(f"Installing {n}...", "dim"))
+                    continue
+                installed_any = True
+                self.after(0, lambda n=name: (
+                    self.log(f"Installing {n}...", "dim"),
+                    self.chk_status_lbl.configure(text=f"Installing {n}...", text_color=C_ORANGE)
+                ))
                 ok = False
                 if name == "Tailscale":
                     ok = install_tailscale(
@@ -682,15 +722,17 @@ class ClientApp(ctk.CTk):
                     r = subprocess.run(info["npm"].split(),
                                        capture_output=True, **ENC, **_NO_WIN)
                     ok = r.returncode == 0
-                else:
-                    # Open download page as last resort
-                    self.after(0, lambda u=info.get("url", ""): webbrowser.open(u))
                 self.after(0, lambda n=name, o=ok: self.log(
-                    f"{n}: {'installed ✓' if o else 'check log above'}", "ok" if o else "warn"))
+                    f"{n}: {'✓ installed' if o else '✗ failed — check log'}", "ok" if o else "warn"))
             self.after(0, lambda: (
                 self.log("=== Setup complete. Rechecking... ===", "ok"),
-                self._check_tools()
+                self._check_tools(),
+                self.btn_setup_all.configure(text="⚡ Setup All", state="normal"),
+                self.chk_status_lbl.configure(
+                    text="All done!" if installed_any else "All tools already installed",
+                    text_color=C_GREEN)
             ))
+            self.after(4000, lambda: self.chk_status_lbl.configure(text=""))
         threading.Thread(target=run, daemon=True).start()
 
     def log(self, msg: str, color: str = C_TEXT):
@@ -781,5 +823,9 @@ class ClientApp(ctk.CTk):
 
 if __name__ == "__main__":
     app = ClientApp()
-    app.geometry("560x640")
+    def on_close():
+        if hasattr(app, "_auto"):
+            app.after_cancel(app._auto)
+        app.destroy()
+    app.protocol("WM_DELETE_WINDOW", on_close)
     app.mainloop()
