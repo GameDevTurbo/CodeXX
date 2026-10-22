@@ -153,22 +153,30 @@ def ts_status() -> dict:
         r = subprocess.run([exe, "status", "--json"],
                            capture_output=True, timeout=8, **ENC, **_NO_WIN)
         if r.returncode != 0:
-            # CLI ran but daemon may not be reachable — service likely stopped
             return {"installed": True, "connected": False, "ip": "", "state": "service_stopped"}
         data = json.loads(r.stdout)
         backend = data.get("BackendState", "")
+        health  = " ".join(data.get("Health", []))
+
         if backend == "Running":
             addrs = data.get("Self", {}).get("TailscaleIPs", [])
             ip = next((a for a in addrs if "." in a), "")
             return {"installed": True, "connected": True, "ip": ip, "state": "running"}
-        elif backend == "NeedsLogin":
+
+        if backend == "NeedsLogin":
             return {"installed": True, "connected": False, "ip": "", "state": "needs_login"}
-        elif backend == "NoState":
-            # Daemon just started, not yet initialized — treat as service_stopped
-            return {"installed": True, "connected": False, "ip": "", "state": "service_stopped"}
-        elif backend == "Stopped":
-            # Authenticated but disconnected — just need tailscale up
+
+        if "starting" in health.lower() or "please wait" in health.lower():
+            return {"installed": True, "connected": False, "ip": "", "state": "starting"}
+
+        if backend == "NoState":
+            # Daemon initialized but no network key — need to run 'tailscale up'
+            return {"installed": True, "connected": False, "ip": "", "state": "needs_login"}
+
+        if backend == "Stopped":
+            # Previously connected, now explicitly disconnected
             return {"installed": True, "connected": False, "ip": "", "state": "disconnected"}
+
         return {"installed": True, "connected": False, "ip": "", "state": backend.lower() or "disconnected"}
     except Exception:
         return {"installed": True, "connected": False, "ip": "", "state": "service_stopped"}
@@ -634,6 +642,11 @@ class ClientApp(ctk.CTk):
             self.btn_ts_connect.configure(text="① Start Service", fg_color="#8b3a00",
                                            command=self._ts_start_service)
             self.btn_ts_connect.pack(side="left", padx=(0, 6))
+
+        elif ts["state"] == "starting":
+            self.ts_dot.configure(text_color=C_ORANGE)
+            self.ts_stat.configure(text="Starting… click ↺ in a few seconds", text_color=C_ORANGE)
+            # No action button — just wait and refresh
 
         elif ts["state"] == "needs_login":
             self.ts_dot.configure(text_color=C_ORANGE)
