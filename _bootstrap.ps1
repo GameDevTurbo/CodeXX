@@ -1,5 +1,5 @@
-﻿# CLIProxyAPI Bootstrap
-# Usage: _bootstrap.ps1 -Dir <path> -Script <client.py|launcher.py>
+# CLIProxyAPI Bootstrap
+# Usage: _bootstrap.ps1 -Dir <path> -Script <launcher.py|launcher.py>
 param(
     [string]$Dir    = $PSScriptRoot,
     [string]$Script = "launcher.py"
@@ -7,16 +7,11 @@ param(
 $Dir = $Dir.TrimEnd([char]92, [char]47)
 
 function Find-Python {
-    # 0. Bundled Python Embeddable (offline_deps\python-embed)
-    $embed = Join-Path $Dir "offline_deps\python-embed\python.exe"
-    if ((Test-Path $embed) -and (Get-Item $embed).Length -gt 10KB) { return $embed }
-
-    # 1. PATH: py launcher, python, python3
+    # 1. System PATH
     foreach ($cmd in @("py","python","python3")) {
         $found = Get-Command $cmd -ErrorAction SilentlyContinue
         if ($found -and $found.Source) { return $found.Source }
     }
-
     # 2. Common install dirs
     $roots = @(
         "$env:LOCALAPPDATA\Programs\Python",
@@ -37,50 +32,21 @@ function Find-Python {
     return $null
 }
 
-function Setup-EmbedPython {
-    # Detect architecture
-    $arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "win32" }
-    $ver = "3.12.7"
-    $url = "https://www.python.org/ftp/python/$ver/python-$ver-embed-$arch.zip"
-    $embedDir = Join-Path $Dir "offline_deps\python-embed"
-    $zip = Join-Path $env:TEMP "python-embed.zip"
-    Write-Host "Downloading Python Embeddable (~10MB) for $arch..."
-    try {
-        (New-Object Net.WebClient).DownloadFile($url, $zip)
-        if ((Get-Item $zip).Length -lt 1MB) { throw "Download incomplete" }
-        Expand-Archive $zip -DestinationPath $embedDir -Force
-        # Validate extraction
-        $pyExe = Join-Path $embedDir "python.exe"
-        if (-not (Test-Path $pyExe) -or (Get-Item $pyExe).Length -lt 10KB) {
-            throw "python.exe missing or corrupt"
-        }
-        # Enable pip (uncomment import site in ._pth)
-        $pth = Get-ChildItem $embedDir -Filter "*._pth" | Select-Object -First 1
-        if ($pth) {
-            (Get-Content $pth.FullName) -replace "^#import site","import site" |
-                Set-Content $pth.FullName -Encoding UTF8
-        }
-        # Install pip
-        $getpip = Join-Path $env:TEMP "get-pip.py"
-        (New-Object Net.WebClient).DownloadFile("https://bootstrap.pypa.io/get-pip.py", $getpip)
-        & $pyExe $getpip -q 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
-        # Install customtkinter
-        & $pyExe -m pip install customtkinter -q 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "customtkinter install failed" }
-        Write-Host "Python Embeddable ready: $pyExe"
-        return $pyExe
-    } catch {
-        Write-Host "Embeddable setup failed: $_"
-        if (Test-Path $embedDir) { Remove-Item $embedDir -Recurse -Force -EA SilentlyContinue }
-        return $null
-    }
+function Install-FromOffline {
+    # Use the full Python installer (includes tkinter/tcl/tk)
+    $inst = Join-Path $Dir "offline_deps\python-3.12-installer.exe"
+    if (-not (Test-Path $inst)) { return $false }
+    Write-Host "Installing Python from offline package (includes tkinter)..."
+    Start-Process $inst -ArgumentList "/quiet","InstallAllUsers=0","PrependPath=1" -Wait
+    Start-Sleep -Seconds 2
+    return $true
 }
 
 function Install-PythonWinget {
     if (-not (Get-Command winget -EA SilentlyContinue)) { return $false }
     Write-Host "Installing Python via winget..."
     winget install Python.Python.3.12 -e --silent --accept-source-agreements --accept-package-agreements | Out-Null
+    Start-Sleep -Seconds 3
     return $true
 }
 
@@ -91,7 +57,7 @@ function Install-Customtkinter($pyExe) {
         if ($LASTEXITCODE -eq 0) { Write-Host "customtkinter: installed from cache"; return }
     }
     & $pyExe -m pip install customtkinter -q 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Host "WARNING: customtkinter install failed - GUI may not start" }
+    if ($LASTEXITCODE -ne 0) { Write-Host "WARNING: customtkinter install may have failed" }
 }
 
 function Get-PythonW($pyExe) {
@@ -107,25 +73,8 @@ function Get-PythonW($pyExe) {
 
 $py = Find-Python
 
-if (-not $py) {
-    # Try offline installer first
-    $offInst = Join-Path $Dir "offline_deps\python-3.12-installer.exe"
-    if (Test-Path $offInst) {
-        Write-Host "Installing Python from offline package..."
-        Start-Process $offInst -ArgumentList "/quiet","InstallAllUsers=0","PrependPath=1" -Wait
-        $py = Find-Python
-    }
-}
-
-if (-not $py) {
-    # Try to download Python Embeddable (no install needed)
-    $py = Setup-EmbedPython
-}
-
-if (-not $py) {
-    Install-PythonWinget | Out-Null
-    $py = Find-Python
-}
+if (-not $py) { Install-FromOffline | Out-Null; $py = Find-Python }
+if (-not $py) { Install-PythonWinget | Out-Null; $py = Find-Python }
 
 if ($py) {
     Write-Host "Python: $py"
@@ -134,8 +83,14 @@ if ($py) {
     $script = Join-Path $Dir $Script
     Start-Process $pyw -ArgumentList "`"$script`""
 } else {
-    Write-Host "ERROR: Could not find or install Python."
-    Write-Host "Please download Python from https://python.org and re-run."
+    Write-Host ""
+    Write-Host "ERROR: Python not found." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Options:" -ForegroundColor Yellow
+    Write-Host "  1. Download a pre-built executable from:"
+    Write-Host "     https://github.com/GameDevTurbo/CodeXX-Client/releases" -ForegroundColor Cyan
+    Write-Host "  2. Install Python from https://python.org then re-run"
+    Write-Host "  3. Run prepare_offline.bat (downloads Python installer)"
+    Write-Host ""
     Read-Host "Press Enter to exit"
 }
-
