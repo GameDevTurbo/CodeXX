@@ -48,6 +48,20 @@ def find_tailscale() -> str:
             return p
     return ""
 
+
+def find_tailscale_gui() -> str:
+    """Return the platform's Tailscale graphical client, when available."""
+    if OS == "Windows":
+        for path in (
+            r"C:\Program Files\Tailscale\tailscale-ipn.exe",
+            r"C:\Program Files (x86)\Tailscale\tailscale-ipn.exe",
+        ):
+            if Path(path).exists():
+                return path
+    elif OS == "Darwin" and Path("/Applications/Tailscale.app").exists():
+        return "/Applications/Tailscale.app"
+    return ""
+
 def ts_status() -> dict:
     exe = find_tailscale()
     if not exe:
@@ -407,16 +421,15 @@ class ClientApp(ctk.CTk):
     def _ts_login(self):
         exe = find_tailscale()
         if not exe: return
-        if OS == "Windows":
-            gui = Path(r"C:\Program Files\Tailscale\Tailscale.exe")
-        else:
-            gui = Path("/Applications/Tailscale.app")
-        if gui.exists():
-            subprocess.Popen([str(gui)], **_NO_WIN) if OS == "Windows" \
-                else subprocess.Popen(["open", str(gui)])
+        gui = find_tailscale_gui()
+        if gui:
+            if OS == "Darwin":
+                subprocess.Popen(["open", gui])
+            else:
+                subprocess.Popen([gui])
             self.log("Tailscale app opened — click Log In.", "warn")
         else:
-            subprocess.Popen([exe, "up"], **_NO_WIN)
+            subprocess.Popen([exe, "up"])
         self.after(5000, self._ts_refresh)
 
     # ── Tool checker ───────────────────────────────────────────────────────────

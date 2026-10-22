@@ -135,8 +135,14 @@ def find_tailscale() -> str:
     return ""
 
 def find_tailscale_gui() -> str:
-    """On Windows/macOS, return GUI app path. Returns empty on Windows
-    since Tailscale.exe == tailscale.exe (same binary, case-insensitive)."""
+    """Return the platform's Tailscale graphical client, when available."""
+    if OS == "Windows":
+        for path in (
+            r"C:\Program Files\Tailscale\tailscale-ipn.exe",
+            r"C:\Program Files (x86)\Tailscale\tailscale-ipn.exe",
+        ):
+            if Path(path).exists():
+                return path
     if OS == "Darwin":
         if Path("/Applications/Tailscale.app").exists():
             return "/Applications/Tailscale.app"
@@ -571,11 +577,14 @@ class App(ctk.CTk):
             open_browser("https://tailscale.com/download")
             return
 
-        # macOS: open the .app bundle
+        # Open the graphical client when it is installed.
         gui = find_tailscale_gui()
         if gui:
             self.log("Opening Tailscale app...", "warn")
-            subprocess.Popen(["open", gui])
+            if OS == "Darwin":
+                subprocess.Popen(["open", gui])
+            else:
+                subprocess.Popen([gui])
             self.after(4000, self._refresh)
             return
 
