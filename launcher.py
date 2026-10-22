@@ -52,10 +52,13 @@ def docker_running() -> bool:
         return False
 
 def service_status() -> str:
-    r = subprocess.run(
-        ["docker", "inspect", "--format", "{{.State.Status}}", CONTAINER],
-        capture_output=True, text=True, timeout=5, **ENC, **_NO_WIN)
-    return r.stdout.strip() if r.returncode == 0 else ""
+    try:
+        r = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Status}}", CONTAINER],
+            capture_output=True, text=True, timeout=5, **ENC, **_NO_WIN)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
 
 def run_compose(args: list, log_fn):
     log_fn(f"Running: docker compose {' '.join(args)}", "dim")
@@ -598,31 +601,6 @@ class App(ctk.CTk):
                 subprocess.Popen([exe, "up"])
         self.after(6000, self._refresh)
 
-    def _do_tailscale_login(self, exe):
-        import re
-        try:
-            proc = subprocess.Popen(
-                [exe, "login"],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, **ENC)
-            url = ""
-            for line in proc.stdout:
-                line = line.strip()
-                if line:
-                    self.after(0, lambda l=line: self.log(l, "dim"))
-                match = re.search(r'https://\S+', line)
-                if match and not url:
-                    url = match.group(0)
-                    self.after(0, lambda u=url: (
-                        self.log(f"Opening: {u}", "ok"),
-                        open_browser(u)
-                    ))
-            proc.wait()
-        except Exception as e:
-            msg = str(e)
-            self.after(0, lambda m=msg: self.log(f"Error: {m}", "error"))
-        self.after(5000, self._refresh)
-
     def _tailscale_start(self):
         ts = tailscale_status()
         if ts["state"] in ("needs_login", "stopped"):
@@ -644,7 +622,13 @@ class App(ctk.CTk):
         self._poll_docker(0)
 
     def _poll_docker(self, attempt: int):
-        if docker_running():
+        def check():
+            ok = docker_running()
+            self.after(0, lambda: self._on_docker_poll_result(ok, attempt))
+        threading.Thread(target=check, daemon=True).start()
+
+    def _on_docker_poll_result(self, ok: bool, attempt: int):
+        if ok:
             self.log("Docker is ready!", "ok")
             self._refresh()
             if not CFG_PATH.exists():
@@ -709,7 +693,7 @@ class App(ctk.CTk):
             for term in ("gnome-terminal", "xterm", "konsole"):
                 if shutil.which(term):
                     subprocess.Popen([term, "--", "bash", "-c",
-                                       f"cd {SCRIPT_DIR} && docker compose logs -f; bash"])
+                                       f"cd ''{SCRIPT_DIR}'' && docker compose logs -f; bash"])
                     break
 
     def _copy_url(self):
