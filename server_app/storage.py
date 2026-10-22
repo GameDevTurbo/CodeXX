@@ -83,7 +83,18 @@ def initialize(root, port=8317, bind="127.0.0.1", proxy_port=None):
                "ports": [f"{address}:{port}:{port}", "127.0.0.1:8085:8085"],
                "volumes": ["./config.yaml:/CLIProxyAPI/config.yaml", "./auths:/root/.cli-proxy-api",
                            "./logs:/CLIProxyAPI/logs", "./plugins:/CLIProxyAPI/plugins"],
-               "restart": "unless-stopped"}
+               # Safe defaults for a service intended to run for weeks. These
+               # limits prevent an upstream/plugin leak from taking the host
+               # down; they can be adjusted in the generated Compose file.
+               "init": True,
+               "restart": "unless-stopped",
+               "stop_grace_period": "30s",
+               "cpus": "2.0",
+               "mem_reservation": "256m",
+               "mem_limit": "1g",
+               "pids_limit": 512,
+               "logging": {"driver": "json-file",
+                            "options": {"max-size": "10m", "max-file": "5"}}}
     if proxy_port:
         service["environment"] = {"HTTP_PROXY": f"http://host.docker.internal:{proxy_port}",
                                   "HTTPS_PROXY": f"http://host.docker.internal:{proxy_port}",
@@ -105,6 +116,56 @@ def initialize(root, port=8317, bind="127.0.0.1", proxy_port=None):
         raise
     return {"created": True, "data_directory": str(root), "bind": bind, "port": port,
             "credentials": "Stored locally; never included in this report."}
+
+
+def harden_runtime(root):
+    """Add safe long-running defaults without replacing existing values."""
+    root = Path(root)
+    path = root / "docker-compose.yml"
+    if not path.is_file():
+        raise FileNotFoundError("docker-compose.yml 不存在；请先初始化或指定正确的数据目录。")
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        raise ValueError("docker-compose.yml 不是有效 YAML；未修改原文件。") from None
+    if not isinstance(document, dict) or not isinstance(document.get("services"), dict):
+        raise ValueError("Compose 文件缺少 services；未修改原文件。")
+    service = document["services"].get("cli-proxy-api")
+    if not isinstance(service, dict):
+        raise ValueError("Compose 文件缺少 cli-proxy-api 服务；未修改原文件。")
+    defaults = {
+        "init": True,
+        "restart": "unless-stopped",
+        "stop_grace_period": "30s",
+        "cpus": "2.0",
+        "mem_reservation": "256m",
+        "mem_limit": "1g",
+        "pids_limit": 512,
+        "logging": {"driver": "json-file",
+                    "options": {"max-size": "10m", "max-file": "5"}},
+    }
+    changed = []
+    for key, value in defaults.items():
+        if key == "logging" and isinstance(service.get(key), dict):
+            logging = service[key]
+            if "options" in logging and not isinstance(logging["options"], dict):
+                raise ValueError("Compose logging.options 类型无效；未修改原文件。")
+            if "driver" not in logging:
+                logging["driver"] = value["driver"]
+                changed.append("logging.driver")
+            options = logging.setdefault("options", {})
+            for option, option_value in value["options"].items():
+                if option not in options:
+                    options[option] = option_value
+                    changed.append(f"logging.options.{option}")
+        elif key == "logging" and key in service:
+            raise ValueError("Compose logging 类型无效；未修改原文件。")
+        elif key not in service:
+            service[key] = value
+            changed.append(key)
+    if changed:
+        write_private(path, yaml.safe_dump(document, sort_keys=False), replace=True)
+    return {"changed": changed, "data_directory": str(root), "preserved_existing_values": True}
 
 
 def connection_profile(root, host, key_index=0):

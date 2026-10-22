@@ -49,3 +49,9 @@
 - Server 优化：`ec8f8c6`（Refactor server packaging and persistent runtime）
 - Client 优化：`01d40d3`（Refactor client packaging and runtime）
 - 两个仓库均已提交到本地 `main`，尚未推送远程。
+
+## Server 长期运行复核
+
+- 新初始化的 Compose 设置 `unless-stopped`、优雅停止、CPU/内存/进程数上限和 Docker 日志轮转。
+- `--harden-runtime` 可对已有 Compose 补齐缺失项，保留用户已设置的值，不自动重启服务。
+- 资源阈值是保守默认值，正式长期运行前仍应结合上游模型、并发量和主机内存监控调整。

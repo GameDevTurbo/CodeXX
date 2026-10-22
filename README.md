@@ -27,6 +27,8 @@
 
 原仓库根目录若已有 config.yaml，继续使用原目录，不自动迁移 auths、日志或凭据。新发布版使用系统用户数据目录，不再把配置写入 PyInstaller 临时目录。可用 CODEXX_SERVER_HOME 或 --data-dir 指定目录，详见 [部署指南](docs/deployment.md)。
 
+关闭 Server 管理窗口不会停止 Docker 容器。新初始化的 Compose 默认启用 `unless-stopped`、30 秒优雅停止、2 CPU、1 GiB 内存、512 进程数上限和 Docker JSON 日志轮转（10 MiB × 5），用于长期挂机时限制资源失控；已有 Compose 不会被静默覆盖。
+
 本仓库停止构建旧客户端；Client.bat / Client.command 只转到独立客户端或下载页，避免两份代码产生不同修复结果。
 
 ## 只读诊断

@@ -18,10 +18,13 @@ Windows 发布版举例；源码以 python launcher.py 替代程序名：
 ```powershell
 .\CLIProxyAPI-Server.exe --doctor --data-dir C:\CodeXXData --report doctor.json
 .\CLIProxyAPI-Server.exe --init --data-dir C:\CodeXXData
+.\CLIProxyAPI-Server.exe --harden-runtime --data-dir C:\CodeXXData
 .\CLIProxyAPI-Server.exe --export-profile --data-dir C:\CodeXXData --host 100.x.x.x --output connection.cliproxy
 ```
 
 初始化生成随机 API Key 和管理密码，私密保存，不打印。重复 --init 保留已有配置、密钥、绑定和代理；发现只存在部分文件时拒绝覆盖，要求先检查。自定义端口用 --port；绑定具体 Tailscale IP 用 --bind；仅确需代理时用 --proxy-port。
+
+`--harden-runtime` 用于已有 Compose：只补齐缺失的重启策略、优雅停止、CPU/内存/进程数和 Docker 日志轮转限制，不覆盖已有值；执行前请先备份 `docker-compose.yml`，执行后按维护窗口决定是否重新 `docker compose up -d`，不会由该命令自动重启服务。
 
 新配置使用本轮核对的上游 config-version 8 结构（server/access/management/oauth）。旧版配置只读兼容，不自动迁移；不要把新生成器当作任意历史镜像的转换器。
 

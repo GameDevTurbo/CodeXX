@@ -8,7 +8,8 @@ import sys
 import urllib.error
 import urllib.request
 
-from .storage import connection_profile, data_directory, initialize, read_config, write_private, probe_url
+from .storage import (connection_profile, data_directory, harden_runtime,
+                      initialize, read_config, write_private, probe_url)
 
 
 def doctor(root, probe=False):
@@ -64,6 +65,8 @@ def main():
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--doctor", action="store_true", help="Read-only environment diagnosis; does not deploy")
     actions.add_argument("--init", action="store_true", help="Initialize missing data; never overwrite existing configuration")
+    actions.add_argument("--harden-runtime", action="store_true",
+                         help="Add missing long-running Compose resource/log defaults; preserve existing values")
     actions.add_argument("--export-profile", action="store_true", help="Export client credentials, never the management password")
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--report", type=Path, help="Sanitized JSON report destination")
@@ -84,6 +87,9 @@ def main():
             code = 0 if result["ready"] else 2
         elif options.init:
             result = initialize(root, options.port, options.bind, options.proxy_port)
+            code = 0
+        elif options.harden_runtime:
+            result = harden_runtime(root)
             code = 0
         elif options.export_profile:
             if not options.host or not options.output:
