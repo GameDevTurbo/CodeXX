@@ -152,18 +152,25 @@ def ts_status() -> dict:
         r = subprocess.run([exe, "status", "--json"],
                            capture_output=True, timeout=8, **ENC, **_NO_WIN)
         if r.returncode != 0:
-            return {"installed": True, "connected": False, "ip": "", "state": "stopped"}
+            # CLI ran but daemon may not be reachable — service likely stopped
+            return {"installed": True, "connected": False, "ip": "", "state": "service_stopped"}
         data = json.loads(r.stdout)
         backend = data.get("BackendState", "")
         if backend == "Running":
             addrs = data.get("Self", {}).get("TailscaleIPs", [])
             ip = next((a for a in addrs if "." in a), "")
             return {"installed": True, "connected": True, "ip": ip, "state": "running"}
-        elif backend in ("NeedsLogin", "NoState"):
+        elif backend == "NeedsLogin":
             return {"installed": True, "connected": False, "ip": "", "state": "needs_login"}
-        return {"installed": True, "connected": False, "ip": "", "state": backend.lower() or "stopped"}
+        elif backend == "NoState":
+            # Daemon just started, not yet initialized — treat as service_stopped
+            return {"installed": True, "connected": False, "ip": "", "state": "service_stopped"}
+        elif backend == "Stopped":
+            # Authenticated but disconnected — just need tailscale up
+            return {"installed": True, "connected": False, "ip": "", "state": "disconnected"}
+        return {"installed": True, "connected": False, "ip": "", "state": backend.lower() or "disconnected"}
     except Exception:
-        return {"installed": True, "connected": False, "ip": "", "state": "unknown"}
+        return {"installed": True, "connected": False, "ip": "", "state": "service_stopped"}
 
 
 def test_connection(api_url: str, api_key: str) -> tuple[bool, str]:
@@ -609,35 +616,42 @@ class ClientApp(ctk.CTk):
 
         if not ts["installed"]:
             self.ts_dot.configure(text_color=C_DIM)
-            self.ts_stat.configure(
-                text="Not installed — click Install to auto-install", text_color=C_DIM)
-            self.btn_ts_connect.configure(
-                text="Install", fg_color=C_ORANGE,
-                command=lambda: self._install_tool(
-                    "https://tailscale.com/download", None, "tailscale"))
+            self.ts_stat.configure(text="Not installed", text_color=C_DIM)
+            self.btn_ts_connect.configure(text="Install", fg_color=C_ORANGE,
+                                           command=lambda: self._install_tool(
+                                               "https://tailscale.com/download", None, "tailscale"))
             self.btn_ts_connect.pack(side="left", padx=(0, 6))
 
         elif connected:
             self.ts_dot.configure(text_color=C_GREEN)
-            self.ts_stat.configure(
-                text=f"Connected · {ts['ip']} — ready for remote access",
-                text_color=C_GREEN)
+            self.ts_stat.configure(text=f"● Connected · {ts['ip']}", text_color=C_GREEN)
             self.btn_ts_disconnect.pack(side="left", padx=(0, 6))
+
+        elif ts["state"] == "service_stopped":
+            self.ts_dot.configure(text_color=C_RED)
+            self.ts_stat.configure(text="Service not running — start it first", text_color=C_RED)
+            self.btn_ts_connect.configure(text="① Start Service", fg_color="#8b3a00",
+                                           command=self._ts_start_service)
+            self.btn_ts_connect.pack(side="left", padx=(0, 6))
 
         elif ts["state"] == "needs_login":
             self.ts_dot.configure(text_color=C_ORANGE)
-            self.ts_stat.configure(
-                text="Not logged in — click Login (browser will open)",
-                text_color=C_ORANGE)
-            self.btn_ts_connect.configure(text="Login", fg_color=C_ORANGE,
+            self.ts_stat.configure(text="Service running — need to log in", text_color=C_ORANGE)
+            self.btn_ts_connect.configure(text="② Login", fg_color=C_ORANGE,
                                            command=self._ts_login)
             self.btn_ts_connect.pack(side="left", padx=(0, 6))
 
-        else:
+        elif ts["state"] == "disconnected":
             self.ts_dot.configure(text_color=C_RED)
-            self.ts_stat.configure(
-                text="Disconnected — click Connect to rejoin", text_color=C_RED)
-            self.btn_ts_connect.configure(text="Connect", fg_color=C_GREEN,
+            self.ts_stat.configure(text="Logged in but disconnected", text_color=C_RED)
+            self.btn_ts_connect.configure(text="③ Connect", fg_color=C_GREEN,
+                                           command=self._ts_connect)
+            self.btn_ts_connect.pack(side="left", padx=(0, 6))
+
+        else:
+            self.ts_dot.configure(text_color=C_DIM)
+            self.ts_stat.configure(text=f"Unknown state: {ts.get('state')}", text_color=C_DIM)
+            self.btn_ts_connect.configure(text="Retry", fg_color=C_DIM,
                                            command=self._ts_connect)
             self.btn_ts_connect.pack(side="left", padx=(0, 6))
 
@@ -652,6 +666,32 @@ class ClientApp(ctk.CTk):
                 self.chk_status_lbl.configure(text="Done", text_color=C_GREEN)
             ))
             self.after(3000, lambda: self.chk_status_lbl.configure(text=""))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _ts_start_service(self):
+        """Start the Tailscale service/daemon."""
+        self.log("Starting Tailscale service...", "warn")
+        def run():
+            try:
+                if OS == "Windows":
+                    # Try starting Windows service (may prompt UAC)
+                    r = subprocess.run(
+                        ["powershell", "-Command",
+                         "Start-Process powershell -Verb RunAs "
+                         "-ArgumentList 'net start tailscale' -Wait"],
+                        timeout=30)
+                    # Also try opening the Tailscale app (it starts the service)
+                    exe = find_tailscale()
+                    if exe:
+                        subprocess.Popen([exe, "up"])
+                elif OS == "Darwin":
+                    subprocess.Popen(["open", "-a", "Tailscale"])
+                else:
+                    subprocess.run(["sudo", "systemctl", "start", "tailscaled"], timeout=15)
+            except Exception as e:
+                self.after(0, lambda: self.log(f"Start service: {e}", "warn"))
+            import time; time.sleep(3)
+            self.after(0, self._ts_refresh)
         threading.Thread(target=run, daemon=True).start()
 
     def _ts_connect(self):
