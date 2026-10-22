@@ -4,7 +4,7 @@ param(
     [string]$Dir    = $PSScriptRoot,
     [string]$Script = "launcher.py"
 )
-$Dir = $Dir.TrimEnd([char]\'\', [char]\'/\')
+$Dir = $Dir.TrimEnd([char]92, [char]47)
 
 function Find-Python {
     # 0. Bundled Python Embeddable (offline_deps\python-embed)
@@ -138,3 +138,4 @@ if ($py) {
     Write-Host "Please download Python from https://python.org and re-run."
     Read-Host "Press Enter to exit"
 }
+
