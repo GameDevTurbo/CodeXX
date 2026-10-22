@@ -1,58 +1,94 @@
 @echo off
-rem ── CLIProxyAPI 离线包准备工具 ────────────────────────────────────────────
-rem 在有网络的机器上运行，下载全部依赖到 offline_deps\
-rem 然后将整个项目目录（含 offline_deps\）复制到目标机器即可离线部署
-setlocal
+chcp 65001 >nul
+title CLIProxyAPI Offline Prep
+
+echo.
+echo  CLIProxyAPI - Offline Environment Preparation
+echo  ================================================
+echo  Run this on a machine WITH internet access.
+echo  Copy the whole folder to the offline machine after.
+echo.
+
 set OUTDIR=%~dp0offline_deps
-mkdir "%OUTDIR%" 2>nul
 mkdir "%OUTDIR%\wheels" 2>nul
-echo.
-echo 准备离线安装包: %OUTDIR%
-echo.
+mkdir "%OUTDIR%\python-embed" 2>nul
 
-rem ── 1. 查找 Python ───────────────────────────────────────────────────────
+rem ── 1. Python Embeddable (no install needed, ~10MB) ──────────────────────
+echo [1/4] Downloading Python Embeddable (~10MB)...
+where curl >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    curl -L --progress-bar -o "%OUTDIR%\python-embed.zip" ^
+        "https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip"
+    powershell -Command "Expand-Archive -Path '%OUTDIR%\python-embed.zip' -DestinationPath '%OUTDIR%\python-embed' -Force"
+    rem Enable pip in embeddable python
+    for %%f in ("%OUTDIR%\python-embed\*._pth") do (
+        powershell -Command "(Get-Content '%%f') -replace '^#import site','import site' | Set-Content '%%f'"
+    )
+    rem Install pip into embeddable python
+    curl -L -o "%OUTDIR%\get-pip.py" "https://bootstrap.pypa.io/get-pip.py"
+    "%OUTDIR%\python-embed\python.exe" "%OUTDIR%\get-pip.py" -q
+    echo [OK]  Python Embeddable ready at offline_deps\python-embed\
+) else (
+    echo [SKIP] curl not found
+)
+
+rem ── 2. customtkinter wheels ───────────────────────────────────────────────
+echo.
+echo [2/4] Downloading customtkinter wheels...
 set PY=
-where py     >nul 2>nul && set PY=py     && goto :pip_download
-where python >nul 2>nul && set PY=python && goto :pip_download
-for /d %%d in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
-    if exist "%%d\python.exe" set PY="%%d\python.exe" && goto :pip_download
-)
-echo [跳过] 未找到 Python，跳过 pip wheels 下载
+where py     >nul 2>nul && set PY=py     && goto :pip
+where python >nul 2>nul && set PY=python && goto :pip
+if exist "%OUTDIR%\python-embed\python.exe" set PY="%OUTDIR%\python-embed\python.exe" && goto :pip
+echo [SKIP] No Python found for pip download
+goto :docker
 
-rem ── 2. 下载 pip wheels ───────────────────────────────────────────────────
-:pip_download
-if defined PY (
-    echo [1/3] 下载 Python 依赖包 (customtkinter)...
-    %PY% -m pip download customtkinter --dest "%OUTDIR%\wheels" -q
-    if %ERRORLEVEL% equ 0 (echo [OK]  wheels -> %OUTDIR%\wheels\) else echo [警告] 部分包下载失败
+:pip
+%PY% -m pip download customtkinter --dest "%OUTDIR%\wheels" -q
+if %ERRORLEVEL% equ 0 (
+    echo [OK]  Wheels saved to offline_deps\wheels\
+) else (
+    echo [WARN] Some wheels failed
 )
 
-rem ── 3. 下载 Python 安装包 ────────────────────────────────────────────────
-echo [2/3] 下载 Python 3.12 安装包 (Windows 离线安装)...
+rem ── 3. Docker image ───────────────────────────────────────────────────────
+:docker
+echo.
+echo [3/4] Saving Docker image (largest dep ~100-200MB)...
+where docker >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    docker info >nul 2>nul
+    if %ERRORLEVEL% equ 0 (
+        docker pull eceasy/cli-proxy-api:latest
+        docker save eceasy/cli-proxy-api:latest -o "%OUTDIR%\cli-proxy-api-image.tar"
+        echo [OK]  Docker image: offline_deps\cli-proxy-api-image.tar
+    ) else (
+        echo [SKIP] Docker not running - start Docker Desktop first
+    )
+) else (
+    echo [SKIP] Docker not installed
+)
+
+rem ── 4. Python full installer (fallback, ~25MB) ───────────────────────────
+echo.
+echo [4/4] Downloading Python installer (fallback)...
 where curl >nul 2>nul && (
     curl -L --progress-bar -o "%OUTDIR%\python-3.12-installer.exe" ^
         "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
-    if %ERRORLEVEL% equ 0 (echo [OK]  Python installer 已保存) else echo [警告] 下载失败
-) || echo [跳过] curl 未找到，请手动下载 Python 安装包
+    echo [OK]  Python installer saved
+) || echo [SKIP] curl not found
 
-rem ── 4. 保存 Docker 镜像 ──────────────────────────────────────────────────
-echo [3/3] 保存 Docker 镜像 (最大依赖，约 100-200MB)...
-where docker >nul 2>nul && docker info >nul 2>nul && (
-    docker pull eceasy/cli-proxy-api:latest
-    docker save eceasy/cli-proxy-api:latest -o "%OUTDIR%\cli-proxy-api-image.tar"
-    if %ERRORLEVEL% equ 0 (echo [OK]  Docker 镜像已保存: %OUTDIR%\cli-proxy-api-image.tar) else echo [警告] 镜像保存失败
-) || echo [跳过] Docker 未运行，请先启动 Docker Desktop 再运行此脚本
-
-rem ── 5. 汇总 ─────────────────────────────────────────────────────────────
+rem ── Done ──────────────────────────────────────────────────────────────────
 echo.
-echo ══ 完成 ══════════════════════════════════
-echo 已保存到: %OUTDIR%
+echo  ================================================
+echo  Done! Contents of offline_deps\:
 dir "%OUTDIR%" /b
 echo.
-echo 离线部署步骤:
-echo   1. 将整个项目文件夹（含 offline_deps\）复制到目标机器
-echo   2. 双击 Server.bat 或 Client.bat
-echo   3. Docker 镜像加载（首次）:
-echo      docker load -i offline_deps\cli-proxy-api-image.tar
+echo  Deploy on offline machine:
+echo    1. Copy this entire folder to target machine
+echo    2. Double-click Server.bat or Client.bat
+echo       (Python Embeddable will be used automatically)
+echo    3. Load Docker image (Server only):
+echo       docker load -i offline_deps\cli-proxy-api-image.tar
+echo  ================================================
 echo.
 pause
