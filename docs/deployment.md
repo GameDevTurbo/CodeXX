@@ -2,6 +2,8 @@
 
 ## 数据目录选择
 
+macOS Apple Silicon 请下载 `macOS-arm64` 发布包；Intel Mac 才使用 `macOS-x64`。应用架构、Docker Desktop 架构和上游镜像架构应尽量保持一致。架构不匹配时可能依赖 Rosetta/amd64 模拟，能启动不代表性能和长期稳定性已验证。
+
 优先级：--data-dir → CODEXX_SERVER_HOME → 兼容的既有根目录 config.yaml → 新默认目录。
 
 - 新源码运行：仓库 data/。
