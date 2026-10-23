@@ -8,6 +8,7 @@ import re
 import platform
 import subprocess
 import threading
+import queue
 import secrets
 import shutil
 import socket
@@ -16,6 +17,7 @@ from datetime import datetime
 
 import customtkinter as ctk
 from .storage import data_directory, initialize, read_config, connection_profile, write_private
+from .runtime import docker_executable, docker_environment, docker_running, compose_operation
 
 SCRIPT_DIR = data_directory()
 OS = platform.system()          # Windows / Darwin / Linux
@@ -43,36 +45,19 @@ else:
 
 # ── Docker helpers ─────────────────────────────────────────────────────────────
 
-def docker_running() -> bool:
-    try:
-        r = subprocess.run(["docker", "info"], capture_output=True, timeout=5, **_NO_WIN)
-        return r.returncode == 0
-    except Exception:
-        return False
-
 def service_status() -> str:
     try:
-        result = subprocess.run(["docker", "inspect", "--format", "{{.State.Status}}", CONTAINER],
-                                capture_output=True, timeout=5, **ENC, **_NO_WIN)
+        executable = docker_executable()
+        if not executable:
+            return ""
+        result = subprocess.run([executable, "inspect", "--format", "{{.State.Status}}", CONTAINER],
+                                env=docker_environment(executable), capture_output=True, timeout=5, **ENC, **_NO_WIN)
         return result.stdout.strip() if result.returncode == 0 else ""
     except (OSError, subprocess.TimeoutExpired):
         return ""
 
 def run_compose(args: list, log_fn):
-    log_fn(f"Running: docker compose {' '.join(args)}", "dim")
-    proc = subprocess.Popen(
-        ["docker", "compose"] + args,
-        cwd=str(SCRIPT_DIR),
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, **ENC, **_NO_WIN)
-    for line in proc.stdout:
-        line = line.rstrip()
-        if line:
-            col = "error" if any(w in line.lower() for w in ("error","fail","fatal")) \
-                else "warn" if "warn" in line.lower() else "normal"
-            log_fn(line, col)
-    proc.wait()
-    return proc.returncode
+    return compose_operation(SCRIPT_DIR, args, log_fn)
 
 def start_docker_desktop():
     if OS == "Windows":
@@ -219,11 +204,29 @@ class App(ctk.CTk):
         self.resizable(False, False)
         self.configure(fg_color=C_BG)
 
+        self._ui_tasks = queue.Queue()
+        self.after(50, self._drain_ui)
         self._docker_poll = None
         self._refreshing  = False   # prevent concurrent refresh threads
+        self._operation_running = False
         self._build_ui()
         self._refresh()
-        self._auto = self.after(8000, self._tick)
+        self._auto = self._schedule(8000, self._tick)
+
+    def _schedule(self, delay, callback):
+        # Tk must only be called from its owning thread, including after().
+        if threading.current_thread() is threading.main_thread():
+            return self.after(delay, callback)
+        self._ui_tasks.put((delay, callback))
+
+    def _drain_ui(self):
+        try:
+            while True:
+                delay, callback = self._ui_tasks.get_nowait()
+                self.after(delay, callback)
+        except queue.Empty:
+            pass
+        self.after(50, self._drain_ui)
 
     # ── UI build ───────────────────────────────────────────────────────────────
 
@@ -298,6 +301,8 @@ class App(ctk.CTk):
         ctk.CTkButton(r2, text="Update Image", width=150,
                       fg_color="#2a2a50", hover_color="#1e1e3c",
                       command=self._update_image).pack(side="left")
+        ctk.CTkButton(r2, text="检查连接", width=120,
+                      command=self._check_connection).pack(side="left", padx=(6,0))
 
         # Connection info card (shown when service is running)
         self.conn_frame = ctk.CTkFrame(self, fg_color="#0f1f0f", corner_radius=8)
@@ -403,7 +408,7 @@ class App(ctk.CTk):
             cfg_ok    = CFG_PATH.exists()
             svc       = service_status() if docker_ok else ""
             ts        = tailscale_status()
-            self.after(0, lambda: self._apply_status(docker_ok, cfg_ok, svc, ts))
+            self._schedule(0, lambda: self._apply_status(docker_ok, cfg_ok, svc, ts))
         finally:
             self._refreshing = False
 
@@ -478,7 +483,7 @@ class App(ctk.CTk):
         rows.append(("API Key",      key))
         rows.append(("Mgmt Panel",   mgmt_url_real))
         rows.append(("Mgmt Password", mgmt_pwd))
-        self.after(0, lambda: self._render_connect_info(rows, server_ip, key))
+        self._schedule(0, lambda: self._render_connect_info(rows, server_ip, key))
 
     def _render_connect_info(self, rows, server_ip, key):
         """Runs on main thread — builds the connection info card."""
@@ -556,7 +561,7 @@ class App(ctk.CTk):
 
     def _tick(self):
         self._refresh()
-        self._auto = self.after(8000, self._tick)
+        self._auto = self._schedule(8000, self._tick)
 
     # ── Step actions ───────────────────────────────────────────────────────────
 
@@ -579,7 +584,7 @@ class App(ctk.CTk):
                 subprocess.Popen(["open", gui])
             else:
                 subprocess.Popen([gui])
-            self.after(4000, self._refresh)
+            self._schedule(4000, self._refresh)
             return
 
         # Windows / Linux: run 'tailscale up' in a visible terminal
@@ -599,7 +604,7 @@ class App(ctk.CTk):
                     break
             else:
                 subprocess.Popen([exe, "up"])
-        self.after(6000, self._refresh)
+        self._schedule(6000, self._refresh)
 
     def _do_tailscale_login(self, exe):
         import re
@@ -612,19 +617,19 @@ class App(ctk.CTk):
             for line in proc.stdout:
                 line = line.strip()
                 if line:
-                    self.after(0, lambda l=line: self.log(l, "dim"))
+                    self._schedule(0, lambda l=line: self.log(l, "dim"))
                 match = re.search(r'https://\S+', line)
                 if match and not url:
                     url = match.group(0)
-                    self.after(0, lambda u=url: (
+                    self._schedule(0, lambda u=url: (
                         self.log(f"Opening: {u}", "ok"),
                         open_browser(u)
                     ))
             proc.wait()
         except Exception as e:
             msg = str(e)
-            self.after(0, lambda m=msg: self.log(f"Error: {m}", "error"))
-        self.after(5000, self._refresh)
+            self._schedule(0, lambda m=msg: self.log(f"Error: {m}", "error"))
+        self._schedule(5000, self._refresh)
 
     def _tailscale_start(self):
         ts = tailscale_status()
@@ -636,14 +641,18 @@ class App(ctk.CTk):
             self.log("Reconnecting Tailscale...", "warn")
             self._run_bg(lambda: subprocess.run([exe, "up"],
                                                 capture_output=True, **ENC))
-            self.after(4000, self._refresh)
+            self._schedule(4000, self._refresh)
 
     def _start_docker(self):
+        if not docker_executable():
+            self.log("请先安装 Docker Desktop。Server 发布包不需要 Python，但需要 Docker。", "warn")
+            open_browser("https://www.docker.com/products/docker-desktop/")
+            return
         self.log("Starting Docker Desktop...", "warn")
         if not start_docker_desktop():
             self.log("Could not find Docker Desktop executable.", "error")
             return
-        self.log("Waiting for Docker to be ready (up to 90s)...", "warn")
+        self.log("等待 Docker 就绪；请在本机完成管理员密码、协议或钥匙串提示（不会自动代填）。", "warn")
         self._poll_docker(0)
 
     def _poll_docker(self, attempt: int):
@@ -654,9 +663,20 @@ class App(ctk.CTk):
                 self._show_wizard()
         elif attempt < 30:
             self.log(f"Still waiting... ({attempt*3}s)", "dim")
-            self.after(3000, lambda: self._poll_docker(attempt + 1))
+            self._schedule(3000, lambda: self._poll_docker(attempt + 1))
         else:
-            self.log("Docker did not start in time. Try opening it manually.", "error")
+            self.log("Docker 尚未就绪。请打开 Docker Desktop 完成授权，然后再次点击 Start Docker。", "error")
+
+    def _check_connection(self):
+        def check():
+            from .cli import doctor
+            result = doctor(SCRIPT_DIR, probe=True)
+            self._safe_log(f"Docker: {result['docker_engine']} | API: {result['api']}", "normal")
+            if result["api"] == "authenticated":
+                self._safe_log(f"API 鉴权通过；模型数 {result['model_count']}。实际生成未验证。", "ok")
+            for step in result["next_steps"]:
+                self._safe_log(step, "warn")
+        self._run_bg(check)
 
     def _show_wizard(self):
         self.wiz_frame.pack(fill="x", padx=20, pady=(0,8),
@@ -708,7 +728,7 @@ class App(ctk.CTk):
         self.clipboard_clear()
         self.clipboard_append(API_URL)
         self.copy_btn.configure(text="Copied!")
-        self.after(1500, lambda: self.copy_btn.configure(text="Copy URL"))
+        self._schedule(1500, lambda: self.copy_btn.configure(text="Copy URL"))
 
     # ── Generate config and deploy ─────────────────────────────────────────────
 
@@ -741,20 +761,26 @@ class App(ctk.CTk):
 
     def _safe_log(self, msg: str, kind: str = "normal"):
         """Thread-safe log: schedule on main thread via after()."""
-        self.after(0, lambda m=msg, k=kind: self.log(m, k))
+        self._schedule(0, lambda m=msg, k=kind: self.log(m, k))
 
     def _run_bg(self, fn, done=None):
         """Run fn in background thread; schedule done() on main thread only on success."""
+        if self._operation_running:
+            self.log("已有操作正在进行，请等待结果，勿重复部署。", "warn")
+            return
+        self._operation_running = True
         def worker():
             try:
                 result = fn()
                 if type(result) is int and result != 0:
                     raise RuntimeError(f"Command failed (exit {result})")
                 if done:
-                    self.after(0, done)
+                    self._schedule(0, done)
             except Exception as e:
                 msg = str(e)
-                self.after(0, lambda m=msg: self.log(f"Error: {m}", "error"))
+                self._schedule(0, lambda m=msg: self.log(f"Error: {m}", "error"))
+            finally:
+                self._schedule(0, lambda: setattr(self, "_operation_running", False))
         threading.Thread(target=worker, daemon=True).start()
 
     def on_close(self):

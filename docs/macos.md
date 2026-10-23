@@ -1,5 +1,7 @@
 # macOS Server（Apple Silicon）
 
+首次使用先看[逐步操作和故障恢复](first-run.md)，特别是系统授权、钥匙串及文件共享提示。v1.1.0 历史包不一定包含本文提及的新版 App，请按该页的历史包说明排查。
+
 本次测试目标是 Apple Silicon（M1/M2/M3/M4 等 arm64）。请下载并使用 `macOS-arm64` 包，不要使用 `macOS-x64` 包。可以在“关于本机”中确认芯片，也可以在终端运行 `uname -m`：Apple Silicon 应显示 `arm64`。
 
 发布包的推荐流程：

@@ -15,6 +15,9 @@ def main():
     arguments = options.arguments
     if arguments[:1] == ["--"]:
         arguments = arguments[1:]
+    diagnostic = any(argument in {"--help", "-h", "--status", "--check-route", "--check-connection",
+                                  "--check-generation", "--doctor", "--init", "--harden-runtime",
+                                  "--export-profile"} for argument in arguments)
     root = Path(__file__).resolve().parent.parent
     entry = root / ("client.py" if options.role == "client" else "launcher.py")
     directory = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".config")))
@@ -31,7 +34,8 @@ def main():
             requirements = root / "requirements.txt"
             fingerprint = hashlib.sha256(requirements.read_bytes()).hexdigest()
             marker = environment / ".codexx-requirements"
-            modules = ["tkinter", "customtkinter"] + (["tomlkit", "pystray", "PIL"] if options.role == "client" else ["yaml"])
+            modules = (["yaml"] if options.role == "server" and diagnostic else
+                       ["tkinter", "customtkinter"] + (["tomlkit", "pystray", "PIL"] if options.role == "client" else ["yaml"]))
             probe = "import importlib.util; assert all(importlib.util.find_spec(name) for name in " + repr(modules) + ")"
             ready = subprocess.run([str(python), "-c", probe], stdout=log, stderr=log).returncode == 0
             if not ready or not marker.exists() or marker.read_text() != fingerprint:
@@ -46,9 +50,6 @@ def main():
                 if subprocess.run([str(python), "-c", probe], stdout=log, stderr=log).returncode != 0:
                     raise RuntimeError("Python is missing Tk or another required module; install a Python distribution with Tk.")
                 marker.write_text(fingerprint, encoding="utf-8")
-            diagnostic = any(argument in {"--help", "-h", "--status", "--check-route", "--check-connection",
-                                          "--check-generation", "--doctor", "--init", "--export-profile"}
-                             for argument in arguments)
             if diagnostic:
                 return subprocess.run([str(python), str(entry), *arguments], cwd=root).returncode
             executable = python.with_name("pythonw.exe") if os.name == "nt" else python

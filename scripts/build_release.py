@@ -46,10 +46,27 @@ def main():
         stage.mkdir()
         if binary.is_dir():
             shutil.copytree(binary, stage / binary.name, symlinks=True)
+            if system == "Darwin":
+                staged_app = stage / binary.name
+                # File providers can attach Finder metadata to App bundles in
+                # Documents. Strip only signing-incompatible resource metadata
+                # in the temporary package, never quarantine/security attributes.
+                for attribute in ("com.apple.FinderInfo", "com.apple.ResourceFork"):
+                    subprocess.run(["xattr", "-dr", attribute, str(staged_app)], capture_output=True)
+                subprocess.run(["codesign", "--verify", "--deep", "--strict", str(staged_app)], check=True)
         else:
             shutil.copy2(binary, stage / binary.name)
         if system == "Windows":
             shutil.copy2(root / (title + ".bat"), stage / (title + ".bat"))
+        elif system == "Darwin":
+            # A release wrapper must never depend on source-only scripts or Python.
+            wrapper = stage / (title + ".command")
+            wrapper.write_text('#!/usr/bin/env bash\nset -euo pipefail\n'
+                               'DIR="$(cd "$(dirname "$0")" && pwd)"\n'
+                               f'APP="$DIR/{name}.app"\n'
+                               'if [[ $# -eq 0 ]]; then exec open "$APP"; fi\n'
+                               f'exec "$APP/Contents/MacOS/{name}" "$@"\n', encoding="utf-8")
+            wrapper.chmod(0o755)
         shutil.copy2(root / "README.md", stage / "README.md")
         shutil.copy2(root / "AI_START.md", stage / "AI_START.md")
         if options.role == "client":

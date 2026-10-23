@@ -3,115 +3,87 @@ name: Build Server
 on:
   push:
     tags: ['v*']
+    branches: [main]
+    paths: ['VERSION']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        shell: bash
+        run: |
+          version=$(cat VERSION)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          tag="v$version"
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo 'Tag does not match VERSION' >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            name: Windows
-          - os: macos-latest
-            name: macOS
+            name: Windows-x64
+          - os: macos-15
+            name: macOS-arm64
+          - os: macos-15-intel
+            name: macOS-x64
           - os: ubuntu-latest
-            name: Linux
-
+            name: Linux-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Install dependencies
-        run: pip install pyinstaller customtkinter
-
+        run: python -m pip install -r requirements.txt pyinstaller
       - name: Install tkinter (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y python3-tk
-
-      - name: Build Server executable
-        run: pyinstaller --onefile --windowed --name CLIProxyAPI-Server launcher.py
-
-      - name: Package (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          $pkg = "CLIProxyAPI-Server-Windows"
-          mkdir $pkg; mkdir $pkg/docs
-          cp dist/CLIProxyAPI-Server.exe, Server.bat, Client.bat, _bootstrap.ps1 $pkg/
-          cp Server.command, Client.command $pkg/
-          cp docker-compose.yml, prepare_offline.bat, README.md $pkg/
-          cp docs/windows.md $pkg/docs/
-          mkdir $pkg/auths, $pkg/logs, $pkg/plugins
-          Compress-Archive -Path $pkg -DestinationPath CLIProxyAPI-Server-Windows.zip
-
-      - name: Package (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          pkg="CLIProxyAPI-Server-macOS"
-          mkdir -p $pkg/docs $pkg/auths $pkg/logs $pkg/plugins
-          cp dist/CLIProxyAPI-Server $pkg/; chmod +x $pkg/CLIProxyAPI-Server
-          cp Server.command Client.command start.sh $pkg/; chmod +x $pkg/Server.command $pkg/Client.command $pkg/start.sh
-          cp docker-compose.yml prepare_offline.sh README.md $pkg/
-          cp docs/macos.md $pkg/docs/
-          zip -r CLIProxyAPI-Server-macOS.zip $pkg
-
-      - name: Package (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          pkg="CLIProxyAPI-Server-Linux"
-          mkdir -p $pkg/docs $pkg/scripts $pkg/auths $pkg/logs $pkg/plugins
-          cp dist/CLIProxyAPI-Server $pkg/; chmod +x $pkg/CLIProxyAPI-Server
-          cp start.sh prepare_offline.sh $pkg/; chmod +x $pkg/start.sh $pkg/prepare_offline.sh
-          cp scripts/deploy.sh $pkg/scripts/; chmod +x $pkg/scripts/deploy.sh
-          cp docker-compose.yml README.md $pkg/
-          cp docs/linux.md $pkg/docs/
-          zip -r CLIProxyAPI-Server-Linux.zip $pkg
-
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk
+      - name: Isolated regression checks
+        run: python -m unittest discover -s tests -v
+      - name: Build and package
+        run: python scripts/build_release.py --role server
       - uses: actions/upload-artifact@v4
         with:
           name: server-${{ matrix.name }}
-          path: CLIProxyAPI-Server-${{ matrix.name }}.zip
-
+          path: |
+            release/*.zip
+            release/*.zip.sha256
+          if-no-files-found: error
   release:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    if: github.event_name == 'push'
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           path: release
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          fail_on_unmatched_files: true
           body: |
-            ## CLIProxyAPI Server ${{ github.ref_name }}
-
-            下载对应平台 zip，解压后双击即可运行，**无需安装 Python**。
-
-            | 平台 | 下载 | 启动方式 |
-            |------|------|---------|
-            | Windows | `CLIProxyAPI-Server-Windows.zip` | 双击 `Server.bat` 或 `.exe` |
-            | macOS | `CLIProxyAPI-Server-macOS.zip` | 双击 `Server.command` |
-            | Linux | `CLIProxyAPI-Server-Linux.zip` | `./CLIProxyAPI-Server` 或 `bash scripts/deploy.sh` |
-
-            ### 客户端工具
-
-            使用端（其他设备连接此服务）请使用：
-            **[CLIProxyAPI-Client](https://github.com/GameDevTurbo/CodeXX-Client/releases)**
-
-            ### 离线部署
-
-            在有网机器运行 `prepare_offline.bat`（Windows）或 `prepare_offline.sh`（Mac/Linux），
-            然后将整个文件夹复制到目标机器，运行：
-            ```
-            docker load -i offline_deps/cli-proxy-api-image.tar
-            ```
-          files: dist/*.zip
+            下载对应系统及 CPU 的 Server ZIP，并核对同名 .sha256。
+            macOS 打开 CLIProxyAPI-Server.app 或 Server.command；Windows 打开 Server.bat；Linux 运行 CLIProxyAPI-Server。
+            预编译包无需 Python，但仍需安装并启动 Docker Desktop（Linux 可用 Docker Engine + Compose）。
+            首次安装的系统授权、钥匙串提示及上游账号登录需要用户在本机完成。
+            详细流程和旧 v1.1.0 包排查见包内 docs/first-run.md；先检查连接再验证实际生成。
+          files: |
+            release/*.zip
+            release/*.zip.sha256

@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import urllib.error
@@ -10,12 +9,14 @@ import urllib.request
 
 from .storage import (connection_profile, data_directory, harden_runtime,
                       initialize, read_config, write_private, probe_url)
+from .runtime import docker_executable, docker_environment
 
 
 def doctor(root, probe=False):
+    executable = docker_executable()
     report = {"schema_version": 1, "data_directory": str(root), "platform": sys.platform,
               "configuration": "missing", "compose_exists": (root / "docker-compose.yml").is_file(),
-              "docker_cli": bool(shutil.which("docker")), "docker_engine": False,
+              "docker_cli": bool(executable), "docker_engine": False,
               "compose_plugin": False, "api": "not_checked", "upstream_account": "unknown",
               "remaining_quota": None, "read_only": True}
     config = None
@@ -28,11 +29,12 @@ def doctor(root, probe=False):
     except (OSError, ValueError):
         report["configuration"] = "invalid"
     if report["docker_cli"]:
-        for field, command in [("docker_engine", ["docker", "info", "--format", "{{.ServerVersion}}"]),
-                               ("compose_plugin", ["docker", "compose", "version", "--short"])]:
+        for field, command in [("docker_engine", [executable, "info", "--format", "{{.ServerVersion}}"]),
+                               ("compose_plugin", [executable, "compose", "version", "--short"])]:
             try:
                 settings = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
-                report[field] = subprocess.run(command, capture_output=True, timeout=6, **settings).returncode == 0
+                report[field] = subprocess.run(command, env=docker_environment(executable),
+                                               capture_output=True, timeout=6, **settings).returncode == 0
             except (OSError, subprocess.TimeoutExpired):
                 report[field] = False
     if probe and config:
@@ -49,6 +51,13 @@ def doctor(root, probe=False):
             if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
                 raise ValueError("Invalid models response")
             report.update(api="authenticated", model_count=len(payload["data"]))
+            # A successful request alone does not prove that authentication is enforced.
+            try:
+                with opener.open(report["probe_url"], timeout=5):
+                    report["api"] = "authentication_not_enforced"
+            except urllib.error.HTTPError as error:
+                if error.code != 401:
+                    report.update(api="unexpected_unauthenticated_status", http_status=error.code)
         except urllib.error.HTTPError as error:
             report.update(api="http_error", http_status=error.code)
         except (OSError, ValueError, TypeError, AttributeError):
@@ -57,6 +66,20 @@ def doctor(root, probe=False):
                             report["docker_engine"], report["compose_plugin"]])
     if probe:
         report["ready"] = report["ready"] and report["api"] == "authenticated"
+    report["next_steps"] = []
+    if not report["docker_cli"]:
+        report["next_steps"].append("安装 Docker Desktop（预编译 Server 仍需要 Docker），打开后完成系统授权。")
+    elif not report["docker_engine"]:
+        report["next_steps"].append("打开 Docker Desktop，检查管理员密码/协议/钥匙串提示，等待引擎就绪后重试。")
+    if report["docker_cli"] and not report["compose_plugin"]:
+        report["next_steps"].append("Docker Compose 不可用；检查或更新 Docker Desktop。")
+    if report["configuration"] != "valid" or not report["compose_exists"]:
+        report["next_steps"].append("新部署使用 Setup 初始化；已有配置先备份并修复，不要重置密钥。")
+    if probe and report["api"] != "authenticated":
+        report["next_steps"].append("检查容器状态、目录共享弹窗、端口映射和密钥；running 不等于 API 可访问。")
+    if report.get("model_count") == 0:
+        report["next_steps"].append("模型列表为空；在管理页检查上游账号授权及模型配置，实际生成尚未验证。")
+    report["generation"] = "not_checked"
     return report
 
 
