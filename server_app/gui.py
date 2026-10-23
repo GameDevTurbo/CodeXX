@@ -214,6 +214,9 @@ class App(ctk.CTk):
         self._refreshing  = False   # prevent concurrent refresh threads
         self._operation_running = False
         self._build_ui()
+        self.log(f"依赖目录：{bundle_directory()}", "dim")
+        if self.offline.get():
+            self.log("已识别本地离线包，安装和部署将优先使用包内文件。", "ok")
         self._refresh()
         self._auto = self._schedule(8000, self._tick)
 
@@ -251,6 +254,8 @@ class App(ctk.CTk):
         ctk.CTkCheckBox(tools, text="离线部署", variable=self.offline, width=120).pack(side="left")
         ctk.CTkButton(tools, text="准备完整离线包", width=150,
                       command=self._prepare_offline).pack(side="left", padx=(8,0))
+        ctk.CTkButton(tools, text="选择离线包", width=120,
+                      command=self._select_offline).pack(side="left", padx=(8,0))
 
         # Steps
         self.steps_frame = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
@@ -606,6 +611,34 @@ class App(ctk.CTk):
             if not result["ready"]:
                 self._safe_log("安装程序已缓存；Docker 就绪后再次准备可补齐镜像，或下载 Release 的完整离线包。", "warn")
         self._run_bg(prepare)
+
+    def _select_offline(self):
+        if self._operation_running:
+            self.log("已有操作进行中；请等待完成，或关闭并重新打开窗口后选择离线目录。", "warn")
+            return
+        from tkinter import filedialog
+        from .dependencies import read_manifest, check_bundle
+        selected = filedialog.askdirectory(parent=self, title="选择解压后的 Server 文件夹或离线依赖目录")
+        if not selected:
+            return
+        target = current_target()
+        directory = Path(selected)
+        candidates = [directory / "offline_deps" / target, directory / target, directory]
+        root = next((path for path in candidates if (path / "manifest.json").is_file()), None)
+        try:
+            if root is None:
+                raise ValueError("未找到离线清单；请选择完整解压的离线包文件夹。")
+            read_manifest(root, target)
+        except (OSError, ValueError) as error:
+            self.log(str(error), "error")
+            return
+        os.environ["CODEXX_OFFLINE_DIR"] = str(root.resolve())
+        self.offline.set(True)
+        def verify():
+            result = check_bundle(root, target)
+            self._safe_log("离线包已识别并校验，可从本地安装依赖。" if result["ready"] else
+                           "已切换到本地离线目录，但缺少部分文件；不会联网补下载。", "ok" if result["ready"] else "warn")
+        self._run_bg(verify)
 
     def _prepare_service_image(self, offline):
         if ensure_image(bundle_directory(), current_target(), self._safe_log, offline, SCRIPT_DIR):

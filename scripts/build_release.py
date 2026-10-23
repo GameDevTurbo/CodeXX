@@ -64,7 +64,18 @@ def main():
             wrapper.write_text('#!/usr/bin/env bash\nset -euo pipefail\n'
                                'DIR="$(cd "$(dirname "$0")" && pwd)"\n'
                                f'APP="$DIR/{name}.app"\n'
-                               'if [[ $# -eq 0 ]]; then exec open "$APP"; fi\n'
+                               'export CODEXX_PACKAGE_DIR="$DIR"\n'
+                               f'BUNDLE="$DIR/offline_deps/{label}-{architecture}"\n'
+                               'if [[ -f "$BUNDLE/manifest.json" ]]; then\n'
+                               '  export CODEXX_OFFLINE_DIR="$BUNDLE"\n'
+                               '  export CODEXX_OFFLINE=1\n'
+                               'fi\n'
+                               'if [[ $# -eq 0 ]]; then\n'
+                               '  if [[ -n "${CODEXX_OFFLINE_DIR:-}" ]]; then\n'
+                               '    exec open --env "CODEXX_PACKAGE_DIR=$DIR" --env "CODEXX_OFFLINE_DIR=$CODEXX_OFFLINE_DIR" --env "CODEXX_OFFLINE=1" "$APP"\n'
+                               '  fi\n'
+                               '  exec open --env "CODEXX_PACKAGE_DIR=$DIR" "$APP"\n'
+                               'fi\n'
                                f'exec "$APP/Contents/MacOS/{name}" "$@"\n', encoding="utf-8")
             wrapper.chmod(0o755)
         shutil.copy2(root / "README.md", stage / "README.md")

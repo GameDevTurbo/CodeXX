@@ -30,9 +30,14 @@ def current_target():
 
 
 def package_directory():
+    if os.environ.get("CODEXX_PACKAGE_DIR"):
+        return Path(os.environ["CODEXX_PACKAGE_DIR"]).expanduser().resolve()
     root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
     if root.name == "MacOS" and root.parent.name == "Contents" and root.parent.parent.suffix == ".app":
-        root = root.parent.parent.parent
+        from .macos_paths import original_app_path
+        app = root.parent.parent
+        original = original_app_path(app)
+        root = (original or app).parent
     return root
 
 
@@ -186,6 +191,8 @@ def ensure_installer(root, target, component, log, offline=False):
         return cached
     if offline:
         raise ValueError("离线包缺少安装程序；请在联网机器准备完整离线包。")
+    if "AppTranslocation" in package_directory().parts and not os.environ.get("CODEXX_OFFLINE_DIR"):
+        raise ValueError("macOS 临时运行路径无法定位安装包。请点击“选择离线包”，或关闭窗口后使用解压目录内的 Server.command；未开始下载。")
     if component not in catalog(target):
         raise ValueError("Linux 请先按发行版安装 Docker Engine、Compose；Tailscale 按官方安装说明准备。")
     name, url = catalog(target)[component]
@@ -274,6 +281,8 @@ def ensure_image(root, target, log, offline=False, data_root=None):
     if not image:
         if offline:
             raise ValueError("离线包缺少服务镜像，已停止部署；不会尝试联网拉取。")
+        if "AppTranslocation" in package_directory().parts and not os.environ.get("CODEXX_OFFLINE_DIR"):
+            raise ValueError("macOS 临时运行路径无法定位离线包，请选择离线目录或使用 Server.command；未开始拉取镜像。")
         return False
     data = read_manifest(root, target).get("image", {})
     if not isinstance(data, dict):

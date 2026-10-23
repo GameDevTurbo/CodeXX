@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from pathlib import Path
 import queue
 import tempfile
@@ -13,6 +14,33 @@ from scripts.package_offline import package
 
 
 class DependencyTests(unittest.TestCase):
+    def test_translocated_app_finds_original_offline_directory(self):
+        with tempfile.TemporaryDirectory(prefix="codexx downloaded ") as directory:
+            root = Path(directory)
+            bundle = root / "offline_deps/macOS-arm64"
+            bundle.mkdir(parents=True)
+            self.bundle(bundle)
+            app = root / "CLIProxyAPI-Server.app"
+            moved = "/private/tmp/AppTranslocation/uuid/d/CLIProxyAPI-Server.app/Contents/MacOS/CLIProxyAPI-Server"
+            with patch.dict(os.environ, {}, clear=True), \
+                    patch.object(deps.sys, "frozen", True, create=True), \
+                    patch.object(deps.sys, "executable", moved), \
+                    patch("server_app.macos_paths.original_app_path", return_value=app), \
+                    patch.object(deps, "download", side_effect=AssertionError("Unexpected download")):
+                self.assertEqual(deps.bundle_directory("macOS-arm64"), bundle)
+                self.assertEqual(deps.ensure_installer(bundle, "macOS-arm64", "docker", lambda *args: None), (bundle / "Docker.dmg").resolve())
+
+    def test_unresolved_translocation_never_downloads_or_pulls(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.dict(os.environ, {}, clear=True), \
+                patch.object(deps, "package_directory", return_value=Path("/private/tmp/AppTranslocation/uuid/d")), \
+                patch.object(deps, "download", side_effect=AssertionError("Unexpected download")), \
+                patch.object(deps, "docker_command", side_effect=AssertionError("Unexpected Docker command")):
+            with self.assertRaisesRegex(ValueError, "临时运行路径"):
+                deps.ensure_installer(directory, "macOS-arm64", "docker", lambda *args: None)
+            with self.assertRaisesRegex(ValueError, "临时运行路径"):
+                deps.ensure_image(directory, "macOS-arm64", lambda *args: None)
+
     def bundle(self, root, target="macOS-arm64"):
         files = {}
         names = {key: value[0] for key, value in deps.catalog(target).items()}
