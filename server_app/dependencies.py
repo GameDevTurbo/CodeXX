@@ -5,10 +5,13 @@ import os
 from pathlib import Path
 import platform
 import re
+import ssl
 import subprocess
 import sys
 import time
 import urllib.request
+
+import certifi
 
 from .runtime import docker_executable, docker_environment, process_options
 
@@ -65,6 +68,13 @@ def sha256(path):
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def tls_context():
+    # Native releases run without a Python installation or its certificate paths.
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.load_default_certs()
+    return context
 
 
 def read_manifest(root, target):
@@ -133,7 +143,7 @@ def _download_once(url, destination, log, allow_html=False):
         headers.update({"Range": f"bytes={offset}-", "If-Range": validator_file.read_text()})
     request = urllib.request.Request(url, headers=headers)
     started = last_notice = time.monotonic()
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=30, context=tls_context()) as response:
         if response.geturl().split(":", 1)[0] != "https":
             raise ValueError("下载被重定向到非 HTTPS 地址。")
         resumed = response.status == 206
@@ -184,7 +194,7 @@ def ensure_installer(root, target, component, log, offline=False):
     download(url, path, log)
     digest = sha256(path)
     if component == "tailscale":
-        with urllib.request.urlopen(url + ".sha256", timeout=30) as response:
+        with urllib.request.urlopen(url + ".sha256", timeout=30, context=tls_context()) as response:
             vendor_digest = response.read(4096).decode().strip().split()[0].lower()
         if not re.fullmatch(r"[0-9a-f]{64}", vendor_digest) or vendor_digest != digest:
             raise ValueError("Tailscale 官方校验值不匹配，已停止使用下载文件。")
