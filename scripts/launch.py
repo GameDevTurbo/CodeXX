@@ -17,7 +17,7 @@ def main():
         arguments = arguments[1:]
     diagnostic = any(argument in {"--help", "-h", "--status", "--check-route", "--check-connection",
                                   "--check-generation", "--doctor", "--init", "--harden-runtime",
-                                  "--export-profile"} for argument in arguments)
+                                  "--export-profile", "--prepare-offline", "--check-offline", "--load-offline", "--download-dependency"} for argument in arguments)
     root = Path(__file__).resolve().parent.parent
     entry = root / ("client.py" if options.role == "client" else "launcher.py")
     directory = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".config")))

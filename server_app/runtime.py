@@ -19,7 +19,9 @@ def docker_executable():
                       Path.home() / "Applications/Docker.app/Contents/Resources/bin/docker"]
     elif os.name == "nt":
         candidates = [Path(os.environ.get("ProgramFiles", r"C:\Program Files")) /
-                      "Docker/Docker/resources/bin/docker.exe"]
+                      "Docker/Docker/resources/bin/docker.exe",
+                      Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) /
+                      "Programs/DockerDesktop/resources/bin/docker.exe"]
     return next((str(path) for path in candidates if path.is_file() and os.access(path, os.X_OK)), None)
 
 

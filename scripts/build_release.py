@@ -71,7 +71,7 @@ def main():
         shutil.copy2(root / "AI_START.md", stage / "AI_START.md")
         if options.role == "client":
             shutil.copy2(root / "TAILSCALE_FIX.md", stage / "TAILSCALE_FIX.md")
-        for document in sorted((root / "docs").rglob("*.md")):
+        for document in sorted(path for path in (root / "docs").rglob("*") if path.suffix in {".md", ".html"}):
             destination = stage / "docs" / document.relative_to(root / "docs")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(document, destination)

@@ -10,44 +10,39 @@
 </head>
 <body>
 <main>
-<header><div class="eyebrow">CODEXX SERVER · v1.2.0</div><h1>部署指南</h1><p>下载软件 → 启动 Docker → 部署服务 → 登录账号 → 测试连接。预编译包无需 Python。</p></header>
+<header><div class="eyebrow">CODEXX SERVER · v1.3.0</div><h1>部署指南</h1><p>下载一个离线包，在应用内安装依赖并部署服务。预编译包无需 Python。</p></header>
 
 <section id="downloads">
-<h2><span class="num">1</span>下载软件</h2>
-<p>按系统选择一行。Server 解压使用；Docker 安装后打开。</p>
-<div class="table-wrap"><table>
-<thead><tr><th>系统</th><th>CodeXX Server</th><th>Docker</th><th>Tailscale · 远程连接可选</th></tr></thead>
-<tbody>
-<tr><td>macOS · Apple 芯片</td><td data-label="Server"><a class="action" href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.2.0/CLIProxyAPI-Server-macOS-arm64.zip">下载 ZIP</a><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.2.0/CLIProxyAPI-Server-macOS-arm64.zip.sha256">SHA-256</a></td><td data-label="Docker"><a href="https://desktop.docker.com/mac/main/arm64/Docker.dmg">下载安装包</a></td><td data-label="Tailscale"><a href="https://tailscale.com/download/mac">官方下载</a></td></tr>
-<tr><td>macOS · Intel</td><td data-label="Server"><a class="action" href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.2.0/CLIProxyAPI-Server-macOS-x64.zip">下载 ZIP</a><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.2.0/CLIProxyAPI-Server-macOS-x64.zip.sha256">SHA-256</a></td><td data-label="Docker"><a href="https://desktop.docker.com/mac/main/amd64/Docker.dmg">下载安装包</a></td><td data-label="Tailscale"><a href="https://tailscale.com/download/mac">官方下载</a></td></tr>
-<tr><td>Windows · x64</td><td data-label="Server"><a class="action" href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.2.0/CLIProxyAPI-Server-Windows-x64.zip">下载 ZIP</a><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.2.0/CLIProxyAPI-Server-Windows-x64.zip.sha256">SHA-256</a></td><td data-label="Docker"><a href="https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe">下载安装包</a></td><td data-label="Tailscale"><a href="https://tailscale.com/download/windows">官方下载</a></td></tr>
-<tr><td>Linux · x64</td><td data-label="Server"><a class="action" href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.2.0/CLIProxyAPI-Server-Linux-x64.zip">下载 ZIP</a><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.2.0/CLIProxyAPI-Server-Linux-x64.zip.sha256">SHA-256</a></td><td data-label="Docker"><a href="https://docs.docker.com/engine/install/">Engine 安装</a> + <a href="https://docs.docker.com/compose/install/linux/">Compose 安装</a></td><td data-label="Tailscale"><a href="https://tailscale.com/download/linux">官方安装</a></td></tr>
+<h2><span class="num">1</span>下载并打开 Server</h2>
+<p>按系统下载一个完整离线包，解压整个文件夹。macOS 打开 <code>CLIProxyAPI-Server.app</code>；Windows 打开 <code>Server.bat</code>；Linux 桌面运行 <code>./CLIProxyAPI-Server</code>。</p>
+<div class="table-wrap"><table><thead><tr><th>系统</th><th>推荐 · 完整离线包</th><th>可选 · 自动下载依赖</th></tr></thead><tbody>
+<tr><td>macOS · Apple 芯片</td><td data-label="推荐"><a class="action" href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-macOS-arm64-offline.zip">下载完整离线包</a><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-macOS-arm64-offline.zip.sha256">校验文件</a></td><td data-label="可选"><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-macOS-arm64.zip">普通小包</a></td></tr>
+<tr><td>macOS · Intel</td><td data-label="推荐"><a class="action" href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-macOS-x64-offline.zip">下载完整离线包</a><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-macOS-x64-offline.zip.sha256">校验文件</a></td><td data-label="可选"><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-macOS-x64.zip">普通小包</a></td></tr>
+<tr><td>Windows · x64</td><td data-label="推荐"><a class="action" href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-Windows-x64-offline.zip">下载完整离线包</a><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-Windows-x64-offline.zip.sha256">校验文件</a></td><td data-label="可选"><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-Windows-x64.zip">普通小包</a></td></tr>
+<tr><td>Linux · x64</td><td data-label="推荐"><a class="action" href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-Linux-x64-offline.zip">下载完整离线包</a><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-Linux-x64-offline.zip.sha256">校验文件</a></td><td data-label="可选"><a href="https://github.com/GameDevTurbo/CodeXX/releases/download/v1.3.0/CLIProxyAPI-Server-Linux-x64.zip">普通小包</a></td></tr>
 </tbody></table></div>
-<p class="tip">Apple M 系列选 Apple 芯片版；Intel Mac 选 Intel 版。以上为当前提供的 Server 架构。<a href="https://github.com/GameDevTurbo/CodeXX/releases/tag/v1.2.0">完整 Release</a></p>
+<p class="tip">完整包包含 Docker/Tailscale 安装程序（Mac/Windows）、服务镜像和管理面板。普通小包体积更小，缺少依赖时在应用内自动下载。保持解压文件夹完整，安装程序位于 offline_deps。</p>
+<details><summary>需要单独下载依赖？</summary><p>Docker：<a href="https://desktop.docker.com/mac/main/arm64/Docker.dmg">Mac Apple 芯片</a> · <a href="https://desktop.docker.com/mac/main/amd64/Docker.dmg">Mac Intel</a> · <a href="https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe">Windows x64</a> · <a href="https://docs.docker.com/engine/install/">Linux Engine</a> + <a href="https://docs.docker.com/compose/install/linux/">Compose</a></p><p>Tailscale：<a href="https://tailscale.com/download/mac">macOS</a> · <a href="https://tailscale.com/download/windows">Windows</a> · <a href="https://tailscale.com/download/linux">Linux</a></p></details>
+<p class="tip">Linux 需预装 Engine + Compose；Windows 需提前准备 WSL 等系统前置项。<a href="https://github.com/GameDevTurbo/CodeXX/releases/tag/v1.3.0">完整 Release</a></p>
 </section>
 
 <section>
-<h2><span class="num">2</span>启动 Docker</h2>
-<p>打开 Docker Desktop，完成安装提示，等待引擎显示 <strong>Running</strong>。Linux 启动 Docker Engine，并确认 Compose 可用。</p>
+<h2><span class="num">2</span>应用内安装 Docker</h2>
+<p>在 Server 点击<strong>“安装 Docker”</strong>：优先打开包内安装程序；普通包会自动下载。完成安装后打开 Docker，等待引擎显示 <strong>Running</strong>。Linux 使用预装的 Engine + Compose。</p>
 <details><summary>安装帮助与版本检查</summary><p><a href="https://docs.docker.com/desktop/setup/install/mac-install/">macOS 安装说明</a> · <a href="https://docs.docker.com/desktop/setup/install/windows-install/">Windows 安装说明（含 WSL）</a></p><pre><code>docker version
 docker compose version</code></pre><p>第一条应包含 Server 信息，第二条应返回 Compose 版本。</p></details>
-<p class="tip">需要跨设备访问：先在服务端和客户端安装 Tailscale，登录同一网络，完成系统授权。本机使用可跳过。</p>
+<p class="tip">跨设备访问时，点击<strong>“安装 Tailscale”</strong>，安装后两端登录同一网络并完成系统授权。本机使用可跳过。</p>
 </section>
 
 <section>
-<h2><span class="num">3</span>打开 Server 并部署</h2>
-<div class="table-wrap"><table><thead><tr><th>系统</th><th>解压后运行</th></tr></thead><tbody>
-<tr><td>macOS</td><td><code>CLIProxyAPI-Server.app</code> 或 <code>Server.command</code></td></tr>
-<tr><td>Windows</td><td><code>Server.bat</code></td></tr>
-<tr><td>Linux 桌面</td><td><code>./CLIProxyAPI-Server</code></td></tr>
-</tbody></table></div>
+<h2><span class="num">3</span>初始化并部署</h2><p>完整离线包会自动勾选<strong>“离线部署”</strong>；程序核验并加载本地镜像和管理面板，跳过联网拉取。</p>
 <ol><li>点击 <strong>Setup</strong>。代理端口按实际配置填写，无代理填 <code>0</code>。</li><li>点击 <strong>Generate and Deploy</strong>，等待镜像下载与容器启动。</li><li>确认 Configuration 为 <strong>Ready</strong>、Service 为 <strong>Running</strong>。</li></ol>
-<p class="tip">macOS App 尚未签名公证，首次打开按系统允许的流程批准。已有配置会保留；新 GUI 配置优先绑定 Tailscale 地址，否则仅本机。</p>
+<p class="tip">安装协议、管理员授权及账号登录在系统界面完成。macOS App 尚未签名公证，首次打开按系统允许的流程批准。已有配置会保留；新 GUI 配置优先绑定 Tailscale 地址，否则仅本机。</p>
 <details><summary>Linux 无桌面部署</summary><p>在解压目录运行。默认仅本机访问；远程部署时，为初始化命令添加 <code>--bind 服务端的Tailscale地址</code>。</p><pre><code>chmod +x CLIProxyAPI-Server
 ./CLIProxyAPI-Server --init --data-dir "$HOME/.local/share/CodeXX/Server"
+./CLIProxyAPI-Server --load-offline --data-dir "$HOME/.local/share/CodeXX/Server"
 cd "$HOME/.local/share/CodeXX/Server"
-docker compose pull
-docker compose up -d</code></pre><p>如已设置 XDG_DATA_HOME 或使用自定义目录，后续命令使用同一数据目录。</p></details>
+docker compose up -d --pull never</code></pre><p>如已设置 XDG_DATA_HOME 或使用自定义目录，后续命令使用同一数据目录。</p></details>
 </section>
 
 <section>
@@ -63,7 +58,7 @@ docker compose up -d</code></pre><p>如已设置 XDG_DATA_HOME 或使用自定�
 <p>点击 Server 的<strong>“检查连接”</strong>，然后用兼容 OpenAI API 的客户端发送一次请求，确认收到模型回复。</p>
 <div class="table-wrap"><table><tbody><tr><th>基础地址</th><td><code>http://localhost:8317/v1</code></td></tr><tr><th>API Key</th><td>当前配置中的 <code>api_keys</code></td></tr><tr><th>模型</th><td>从服务返回的模型列表选择</td></tr></tbody></table></div>
 <p>可选用 CodeXX Client：</p><div class="links"><a class="button" href="https://github.com/GameDevTurbo/CodeXX-Client/releases/download/v1.1.0/CLIProxyAPI-Client-Windows.zip">Windows 客户端</a><a class="button" href="https://github.com/GameDevTurbo/CodeXX-Client/releases/download/v1.1.0/CLIProxyAPI-Client-macOS.zip">macOS 客户端</a><a class="button" href="https://github.com/GameDevTurbo/CodeXX-Client/releases/download/v1.1.0/CLIProxyAPI-Client-Linux.zip">Linux 客户端</a><a href="https://github.com/GameDevTurbo/CodeXX-Client/releases">版本与说明</a></div>
-<p class="tip">模型列表可用不代表实际生成成功；测试请求可能消耗上游额度。</p>
+<p class="tip">离线包解决安装与镜像部署；上游 AI 调用、首次授权和 Tailscale 登录仍需网络。模型列表可用不代表实际生成成功；测试请求可能消耗上游额度。</p>
 <details><summary>其他设备如何连接？</summary><p>两端先连接同一 Tailscale 网络。使用 Server 的 <strong>Export .cliproxy</strong> 导出并导入客户端，或将基础地址改为 <code>http://服务端Tailscale地址:8317/v1</code>。服务必须已绑定该地址；远端不能使用 localhost。</p><p>既有配置不会自动改绑。若最初仅绑定本机，先备份并调整数据目录内 Compose 的端口绑定，再重新启动容器。</p></details>
 </section>
 
@@ -77,7 +72,7 @@ docker compose up -d</code></pre><p>如已设置 XDG_DATA_HOME 或使用自定�
 </tbody></table></div>
 <p class="tip">关闭管理窗口后服务仍会运行；停止服务请点击 Stop。升级前备份数据目录。</p>
 </section>
-<footer>下载来自项目 Release、Docker 与 Tailscale 官方网站。<a href="https://github.com/GameDevTurbo/CodeXX">项目仓库</a></footer>
+<footer>下载来自项目 Release、Docker 与 Tailscale 官方网站。<a href="https://github.com/GameDevTurbo/CodeXX/blob/main/docs/offline.md">自行准备离线包</a> · <a href="https://github.com/GameDevTurbo/CodeXX">项目仓库</a></footer>
 </main>
 </body>
 </html>

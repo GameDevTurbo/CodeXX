@@ -18,6 +18,8 @@ from datetime import datetime
 import customtkinter as ctk
 from .storage import data_directory, initialize, read_config, connection_profile, write_private
 from .runtime import docker_executable, docker_environment, docker_running, compose_operation
+from .dependencies import (bundle_directory, current_target, ensure_installer,
+                           ensure_image, open_installer, prepare_bundle)
 
 SCRIPT_DIR = data_directory()
 OS = platform.system()          # Windows / Darwin / Linux
@@ -64,6 +66,8 @@ def start_docker_desktop():
         paths = [
             r"C:\Program Files\Docker\Docker\Docker Desktop.exe",
             r"C:\Program Files (x86)\Docker\Docker\Docker Desktop.exe",
+            str(Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) /
+                "Programs/DockerDesktop/Docker Desktop.exe"),
         ]
         for p in paths:
             if Path(p).exists():
@@ -239,6 +243,14 @@ class App(ctk.CTk):
                      text_color=C_BLUE).pack(anchor="w", pady=(16,0), **pad)
         ctk.CTkLabel(self, text="AI Subscription API Gateway",
                      font=ctk.CTkFont(size=11), text_color=C_DIM).pack(anchor="w", pady=(0,10), **pad)
+
+        tools = ctk.CTkFrame(self, fg_color="transparent")
+        tools.pack(fill="x", padx=20, pady=(0,8))
+        self.offline = ctk.BooleanVar(value=os.environ.get("CODEXX_OFFLINE") == "1" or
+                                     (bundle_directory() / "cli-proxy-api-image.tar").is_file())
+        ctk.CTkCheckBox(tools, text="离线部署", variable=self.offline, width=120).pack(side="left")
+        ctk.CTkButton(tools, text="准备完整离线包", width=150,
+                      command=self._prepare_offline).pack(side="left", padx=(8,0))
 
         # Steps
         self.steps_frame = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=8)
@@ -419,7 +431,7 @@ class App(ctk.CTk):
             self._set_step(self.s1, C_GREEN, "Running", None, None)
         else:
             self._set_step(self.s1, C_ORANGE, "Not running",
-                           "Start Docker", C_ORANGE, self._start_docker)
+                           "Start Docker" if docker_executable() else "安装 Docker", C_ORANGE, self._start_docker)
 
         # Step 2: Config
         if cfg_ok:
@@ -445,7 +457,7 @@ class App(ctk.CTk):
         # Step 4: Tailscale
         if ts["state"] == "not_installed":
             self._set_step(self.s4, C_DIM, "Not installed",
-                           "Download", C_DIM, self._tailscale_download)
+                           "安装 Tailscale", C_DIM, self._tailscale_download)
         elif ts["state"] == "needs_login":
             self._set_step(self.s4, C_ORANGE, "Not logged in",
                            "Login", C_ORANGE, self._tailscale_login)
@@ -566,8 +578,39 @@ class App(ctk.CTk):
     # ── Step actions ───────────────────────────────────────────────────────────
 
     def _tailscale_download(self):
-        open_browser("https://tailscale.com/download")
-        self.log("Opening tailscale.com/download in browser...", "warn")
+        self._install_dependency("tailscale")
+
+    def _install_dependency(self, component):
+        if OS == "Linux":
+            if self.offline.get():
+                self.log("Linux 离线部署需预装 Docker Engine、Compose；Tailscale 按发行版准备。", "warn")
+                return
+            open_browser("https://docs.docker.com/engine/install/" if component == "docker" else "https://tailscale.com/download/linux")
+            return
+        offline = self.offline.get()
+        def install():
+            path = ensure_installer(bundle_directory(), current_target(), component, self._safe_log, offline)
+            open_installer(path)
+            self._safe_log("已打开安装程序；请完成安装、协议及系统授权，安装后打开应用。", "warn")
+        self._run_bg(install, done=self._refresh)
+
+    def _prepare_offline(self):
+        if self.offline.get():
+            self.log("准备离线包需要联网；请在联网机器取消离线部署后再准备。", "warn")
+            return
+        def prepare():
+            target = current_target()
+            root = bundle_directory(target)
+            result = prepare_bundle(root, target, self._safe_log, installers_only=not docker_running())
+            self._safe_log(f"离线文件位置：{root}", "normal")
+            if not result["ready"]:
+                self._safe_log("安装程序已缓存；Docker 就绪后再次准备可补齐镜像，或下载 Release 的完整离线包。", "warn")
+        self._run_bg(prepare)
+
+    def _prepare_service_image(self, offline):
+        if ensure_image(bundle_directory(), current_target(), self._safe_log, offline, SCRIPT_DIR):
+            return 0
+        return run_compose(["pull"], self._safe_log)
 
     def _tailscale_login(self):
         exe = find_tailscale()
@@ -645,8 +688,7 @@ class App(ctk.CTk):
 
     def _start_docker(self):
         if not docker_executable():
-            self.log("请先安装 Docker Desktop。Server 发布包不需要 Python，但需要 Docker。", "warn")
-            open_browser("https://www.docker.com/products/docker-desktop/")
+            self._install_dependency("docker")
             return
         self.log("Starting Docker Desktop...", "warn")
         if not start_docker_desktop():
@@ -689,15 +731,18 @@ class App(ctk.CTk):
             self.log("No config.yaml found.", "error")
             self._show_wizard(); return
         ensure_dirs()
-        self._run_bg(lambda: run_compose(["up", "-d", "--pull", "never"], self._safe_log),
+        offline = self.offline.get()
+        def deploy():
+            code = self._prepare_service_image(offline)
+            return code if code else run_compose(["up", "-d", "--pull", "never"], self._safe_log)
+        self._run_bg(deploy,
                      done=lambda: (self._refresh(), open_browser(MGMT_URL)))
 
     def _start_service(self):
         if not docker_running():
             self.log("Docker not running.", "error"); return
         ensure_dirs()
-        self._run_bg(lambda: run_compose(["up", "-d", "--pull", "never"], self._safe_log),
-                     done=self._refresh)
+        self._deploy()
 
     def _stop_service(self):
         if not docker_running():
@@ -710,6 +755,9 @@ class App(ctk.CTk):
         self._run_bg(lambda: run_compose(["restart"], self._safe_log), done=self._refresh)
 
     def _update_image(self):
+        if self.offline.get():
+            self.log("离线部署不会更新镜像；请在联网机器重新准备离线包。", "warn")
+            return
         if not docker_running():
             self.log("Docker not running.", "error"); return
         def do():
@@ -747,9 +795,9 @@ class App(ctk.CTk):
                  "Existing configuration preserved; keys and proxy settings were not regenerated.", "ok")
         self.wiz_frame.pack_forget()
         self._refresh()
-
+        offline = self.offline.get()
         def deploy():
-            result = run_compose(["pull"], self._safe_log)
+            result = self._prepare_service_image(offline)
             if result != 0:
                 return result
             return run_compose(["up", "-d", "--pull", "never"], self._safe_log)

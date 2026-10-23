@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import sys
 
 import yaml
@@ -116,6 +117,50 @@ def initialize(root, port=8317, bind="127.0.0.1", proxy_port=None):
         raise
     return {"created": True, "data_directory": str(root), "bind": bind, "port": port,
             "credentials": "Stored locally; never included in this report."}
+
+
+def install_management_asset(root, asset):
+    """Attach a cached panel without replacing existing config, keys or assets."""
+    root = Path(root)
+    path = root / "docker-compose.yml"
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict) or not isinstance(document.get("services"), dict):
+        raise ValueError("Compose 配置无效。")
+    service = document["services"].get("cli-proxy-api")
+    if not isinstance(service, dict):
+        raise ValueError("未找到 cli-proxy-api 服务。")
+    environment = service.get("environment") or {}
+    if isinstance(environment, list):
+        if not all(isinstance(item, str) for item in environment):
+            raise ValueError("Compose 环境变量格式无效。")
+        environment = dict(item.split("=", 1) if "=" in item else (item, None) for item in environment)
+    if not isinstance(environment, dict):
+        raise ValueError("Compose 环境变量格式无效。")
+    static_path = "/CLIProxyAPI/static"
+    if environment.get("MANAGEMENT_STATIC_PATH", static_path) != static_path:
+        raise ValueError("已有自定义管理面板路径；请按原路径手动缓存管理面板。")
+    volumes = service.get("volumes", [])
+    mount = "./static:/CLIProxyAPI/static"
+    if not isinstance(volumes, list):
+        raise ValueError("Compose 挂载格式无效。")
+    for volume in volumes:
+        if isinstance(volume, dict):
+            target = volume.get("target")
+        else:
+            parts = str(volume).split(":")
+            target = parts[-2] if len(parts) >= 3 and parts[-1] in {"ro", "rw", "z", "Z"} else parts[-1]
+        if target == static_path and volume != mount:
+            raise ValueError("已有自定义管理面板挂载，请保留并手动准备文件。")
+    panel_root = root / "static"
+    panel_root.mkdir(exist_ok=True)
+    if not (panel_root / "management.html").exists():
+        shutil.copyfile(asset, panel_root / "management.html")
+    environment["MANAGEMENT_STATIC_PATH"] = static_path
+    service["environment"] = environment
+    if mount not in volumes:
+        volumes.append(mount)
+    service["volumes"] = volumes
+    write_private(path, yaml.safe_dump(document, sort_keys=False), replace=True)
 
 
 def harden_runtime(root):

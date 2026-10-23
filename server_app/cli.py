@@ -91,6 +91,16 @@ def main():
     actions.add_argument("--harden-runtime", action="store_true",
                          help="Add missing long-running Compose resource/log defaults; preserve existing values")
     actions.add_argument("--export-profile", action="store_true", help="Export client credentials, never the management password")
+    actions.add_argument("--prepare-offline", action="store_true", help="Download official installers and export a Docker image; does not install")
+    actions.add_argument("--check-offline", action="store_true", help="Verify local dependency files without network access")
+    actions.add_argument("--load-offline", action="store_true", help="Load a verified offline image and cached management page; does not start containers")
+    actions.add_argument("--download-dependency", choices=["docker", "tailscale"], help="Cache an official installer")
+    from .dependencies import TARGETS
+    parser.add_argument("--target", choices=TARGETS, help="Target platform for offline preparation")
+    parser.add_argument("--bundle-dir", type=Path, help="Directory holding the offline manifest and payloads")
+    parser.add_argument("--installers-only", action="store_true", help="Prepare installers without requiring Docker")
+    parser.add_argument("--open-installer", action="store_true", help="Open the downloaded installer for interactive installation")
+    parser.add_argument("--offline", action="store_true", help="Use local dependencies only; never pull images during deployment")
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--report", type=Path, help="Sanitized JSON report destination")
     parser.add_argument("--probe", action="store_true", help="With --doctor, check local /v1/models; no generation")
@@ -101,11 +111,47 @@ def main():
     parser.add_argument("--key-index", type=int, default=0)
     parser.add_argument("--output", type=Path, help="New .cliproxy file; refuses to overwrite")
     options = parser.parse_args()
+    if options.offline:
+        os.environ["CODEXX_OFFLINE"] = "1"
+    if options.bundle_dir:
+        os.environ["CODEXX_OFFLINE_DIR"] = str(options.bundle_dir.expanduser().resolve())
+    if options.open_installer and not options.download_dependency:
+        parser.error("--open-installer requires --download-dependency")
     if options.data_dir:
         os.environ["CODEXX_SERVER_HOME"] = str(options.data_dir.expanduser().resolve())
     root = data_directory()
     try:
-        if options.doctor:
+        if options.prepare_offline or options.check_offline or options.load_offline or options.download_dependency:
+            from . import dependencies
+            target = options.target or dependencies.current_target()
+            directory = options.bundle_dir or dependencies.bundle_directory(target)
+            def log(message, kind="normal"):
+                if sys.stderr:
+                    print(message, file=sys.stderr, flush=True)
+            if options.prepare_offline:
+                if options.offline:
+                    parser.error("--prepare-offline downloads files; use --check-offline to verify without network")
+                result = dependencies.prepare_bundle(directory, target, log, options.installers_only)
+                code = 0 if result["ready"] or options.installers_only else 2
+            elif options.load_offline:
+                if target != dependencies.current_target():
+                    parser.error("Cannot load an image for another platform")
+                dependencies.ensure_image(directory, target, log, offline=True, data_root=root)
+                result = {"loaded": True, "deployed": False}
+                code = 0
+            elif options.check_offline:
+                result = dependencies.check_bundle(directory, target)
+                code = 0 if result["ready"] else 2
+            else:
+                if options.open_installer and target != dependencies.current_target():
+                    parser.error("Cannot open an installer for another platform")
+                path = dependencies.ensure_installer(directory, target, options.download_dependency, log, options.offline)
+                if options.open_installer:
+                    dependencies.open_installer(path)
+                result = {"downloaded": True, "path": str(path), "installer_opened": options.open_installer,
+                          "installed": "not_checked"}
+                code = 0
+        elif options.doctor:
             result = doctor(root, options.probe)
             code = 0 if result["ready"] else 2
         elif options.init:
@@ -126,9 +172,11 @@ def main():
         else:
             from .gui import main as gui_main
             return gui_main()
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
         result = {"success": False, "error_type": type(error).__name__,
                   "message": "操作失败；请检查路径、配置格式或参数。已有配置未被自动覆盖。"}
+        if isinstance(error, ValueError) and (options.prepare_offline or options.check_offline or options.load_offline or options.download_dependency):
+            result["message"] = str(error)
         code = 1
     if options.report:
         if options.report.resolve() in {root.resolve() / name for name in ("config.yaml", "docker-compose.yml", ".credentials.json")}:

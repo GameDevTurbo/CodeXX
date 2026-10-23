@@ -2,6 +2,8 @@
 
 ## 选择正确的下载包
 
+推荐下载对应系统的 `-offline.zip`：包含安装程序（Mac/Windows）、服务镜像和管理面板。直接打开 Server，缺少依赖时点击界面安装按钮；本地包优先，无需逐个访问下载网站。普通 ZIP 会自动下载缺失安装程序。完整流程见[自动下载与离线部署](offline.md)。
+
 Apple Silicon 下载 macOS-arm64，Intel Mac 下载 macOS-x64；Windows 和 Linux 同样按 CPU 选择。使用 Release 随附的文档及 manifest.json，不要把 main 分支说明直接当成旧发布包说明。核对同名 .sha256，再解压到可写目录。
 
 预编译包无需 Python。macOS/Windows 仍需 Docker Desktop；Linux 需 Docker Engine 与 Compose 插件。Tailscale 仅在其他设备远程访问时需要。本机先完成部署和验证，再配置远程连接。
